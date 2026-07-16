@@ -12,6 +12,7 @@ from typing import Any
 
 from nicegui import ui
 
+from dbvisual.app.ai.ui import ai_generate_dialog, ai_settings_dialog
 from dbvisual.app.query_builder import build_queryspec
 from dbvisual.app.report_service import (
     ReportSpec,
@@ -58,6 +59,23 @@ def _create_dialog(on_saved) -> None:
             custom_sql = ui.textarea(
                 placeholder="SELECT ... (solo lettura, bind con :param)"
             ).classes("w-full")
+
+            def _apply_ai_sql(sql: str) -> None:
+                custom_sql.set_value(sql)
+
+            def _open_ai() -> None:
+                if conn_select.value is None:
+                    ui.notify("Scegli prima una connessione.", type="warning")
+                    return
+                ai_generate_dialog(int(conn_select.value), _apply_ai_sql)
+
+            with ui.row().classes("gap-2"):
+                ui.button(
+                    "Genera con AI", icon="auto_awesome", on_click=_open_ai
+                ).props("outline size=sm")
+                ui.button(
+                    "Impostazioni AI", icon="settings", on_click=ai_settings_dialog
+                ).props("flat size=sm")
 
         def _toggle_source() -> None:
             builder_box.set_visibility(source.value == "builder")
