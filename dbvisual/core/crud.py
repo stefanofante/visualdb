@@ -13,6 +13,8 @@ from typing import Any, Callable, Literal
 
 from sqlalchemy import Connection, Engine, Table, and_, delete, insert, update
 
+from dbvisual.core.events import CrudEvent, emit
+
 OpKind = Literal["insert", "update", "delete"]
 
 
@@ -88,7 +90,9 @@ def _exec_delete(conn: Connection, table: Table, pk_values: dict[str, Any]) -> i
 def insert_record(engine: Engine, table: Table, values: dict[str, Any]) -> Any:
     """Insert a single row and return its primary key (if the driver reports one)."""
     with engine.begin() as conn:
-        return _exec_insert(conn, table, values)
+        result = _exec_insert(conn, table, values)
+    emit(CrudEvent("created", table.name, dict(values)))
+    return result
 
 
 def update_record(
@@ -110,13 +114,16 @@ def update_record(
             raise ConflictError(
                 "Il record è stato modificato da altri: ricarica e riprova."
             )
-        return affected
+    emit(CrudEvent("updated", table.name, {**pk_values, **values}))
+    return affected
 
 
 def delete_record(engine: Engine, table: Table, pk_values: dict[str, Any]) -> int:
     """Delete the row matching ``pk_values`` and return the affected row count."""
     with engine.begin() as conn:
-        return _exec_delete(conn, table, pk_values)
+        affected = _exec_delete(conn, table, pk_values)
+    emit(CrudEvent("deleted", table.name, dict(pk_values)))
+    return affected
 
 
 def _apply(conn: Connection, op: Operation) -> Any:
@@ -169,4 +176,18 @@ def save_master_detail(
             link(master_result, detail_ops)
         for op in detail_ops:
             results.append(_apply(conn, op))
+    # Emit events only after the whole transaction commits successfully.
+    for op in (master_op, *detail_ops):
+        emit(_event_for_op(op))
     return results
+
+
+def _event_for_op(op: Operation) -> CrudEvent:
+    """Map an :class:`Operation` to its post-commit :class:`CrudEvent`."""
+    if op.kind == "insert":
+        return CrudEvent("created", op.table.name, dict(op.values or {}))
+    if op.kind == "update":
+        return CrudEvent(
+            "updated", op.table.name, {**(op.pk_values or {}), **(op.values or {})}
+        )
+    return CrudEvent("deleted", op.table.name, dict(op.pk_values or {}))
