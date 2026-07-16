@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dbvisual"
+version = "0.1.0"
+description = "Local, self-contained visual builder for forms, sheets and reports over existing databases."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "dbvisual" }]
+keywords = ["database", "sqlalchemy", "forms", "reports", "local", "visual-db"]
+
+dependencies = [
+    "sqlalchemy>=2.0",
+    "pydantic>=2",
+    # Phase 2 — monolithic app shell, local metadata store & secrets.
+    "nicegui>=3,<4",
+    "keyring>=24",
+    "cryptography>=42",
+    "platformdirs>=4",
+]
+
+[project.optional-dependencies]
+postgresql = ["psycopg[binary]>=3.1"]
+mysql = ["pymysql>=1.1"]
+mssql = ["pyodbc>=5.0"]
+oracle = ["oracledb>=2.0"]
+# Convenience group that pulls in every supported driver.
+all-drivers = [
+    "psycopg[binary]>=3.1",
+    "pymysql>=1.1",
+    "pyodbc>=5.0",
+    "oracledb>=2.0",
+]
+# Development / testing.
+dev = ["pytest>=7.4"]
+
+[project.scripts]
+dbvisual = "dbvisual.app.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["dbvisual*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v"
