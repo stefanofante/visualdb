@@ -27,7 +27,9 @@ _SYSTEM = (
 _FENCE = re.compile(r"^```(?:sql)?\s*|\s*```$", re.IGNORECASE | re.MULTILINE)
 
 
-def default_http(url: str, headers: dict[str, str], payload: dict[str, Any]) -> dict[str, Any]:
+def default_http(
+    url: str, headers: dict[str, str], payload: dict[str, Any]
+) -> dict[str, Any]:
     """POST ``payload`` as JSON and return the parsed JSON response."""
     request = urllib.request.Request(
         url,
@@ -54,10 +56,17 @@ class LLMProvider(ABC):
 
     name: str = "base"
 
-    def __init__(self, api_key: str, model: str, http: HttpClient | None = None) -> None:
+    def __init__(
+        self,
+        api_key: str,
+        model: str,
+        http: HttpClient | None = None,
+        system: str | None = None,
+    ) -> None:
         self._api_key = api_key
         self.model = model
         self._http = http or default_http
+        self._system = system or _SYSTEM
 
     def _user_prompt(self, prompt: str, schema: dict[str, list[str]]) -> str:
         return f"Schema:\n{format_schema(schema)}\n\nRequest:\n{prompt}"
@@ -91,8 +100,10 @@ class AnthropicProvider(LLMProvider):
         payload = {
             "model": self.model,
             "max_tokens": 1024,
-            "system": _SYSTEM,
-            "messages": [{"role": "user", "content": self._user_prompt(prompt, schema)}],
+            "system": self._system,
+            "messages": [
+                {"role": "user", "content": self._user_prompt(prompt, schema)}
+            ],
         }
         return url, headers, payload
 
@@ -109,7 +120,7 @@ class OpenAIProvider(LLMProvider):
         payload = {
             "model": self.model,
             "messages": [
-                {"role": "system", "content": _SYSTEM},
+                {"role": "system", "content": self._system},
                 {"role": "user", "content": self._user_prompt(prompt, schema)},
             ],
         }
@@ -135,10 +146,8 @@ class GeminiProvider(LLMProvider):
             f"{self.model}:generateContent?key={self._api_key}"
         )
         payload = {
-            "system_instruction": {"parts": [{"text": _SYSTEM}]},
-            "contents": [
-                {"parts": [{"text": self._user_prompt(prompt, schema)}]}
-            ],
+            "system_instruction": {"parts": [{"text": self._system}]},
+            "contents": [{"parts": [{"text": self._user_prompt(prompt, schema)}]}],
         }
         return url, {}, payload
 
@@ -170,11 +179,25 @@ PROVIDER_LABELS: dict[str, str] = {
 
 
 def get_provider(
-    name: str, api_key: str, model: str, http: HttpClient | None = None
+    name: str,
+    api_key: str,
+    model: str,
+    http: HttpClient | None = None,
+    system: str | None = None,
 ) -> LLMProvider:
-    """Instantiate a provider by name."""
+    """Instantiate a provider by name (optionally with a custom system prompt)."""
     try:
         cls = _PROVIDERS[name]
     except KeyError as exc:
         raise ValueError(f"Provider LLM sconosciuto: {name!r}") from exc
-    return cls(api_key=api_key, model=model, http=http)
+    return cls(api_key=api_key, model=model, http=http, system=system)
+
+
+def ddl_system_prompt(dialect: str) -> str:
+    """System prompt instructing the model to emit reviewable DDL for ``dialect``."""
+    return (
+        "You are a database schema assistant. Generate DDL (e.g. CREATE TABLE) for "
+        f"the {dialect} dialect from the user's description: columns with types, "
+        "primary keys and foreign keys. Return ONLY the SQL DDL, no explanation and "
+        "no code fences. The statement will be reviewed by a human before execution."
+    )

@@ -10,6 +10,7 @@ from nicegui import ui
 # (label, icon, route) for each primary navigation entry.
 _NAV: list[tuple[str, str, str]] = [
     ("Connessioni", "storage", "/connections"),
+    ("Database", "schema", "/schema"),
     ("Sheet", "grid_on", "/sheets"),
     ("Form", "dynamic_form", "/forms"),
     ("Report", "insights", "/reports"),
