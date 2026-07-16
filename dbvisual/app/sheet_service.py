@@ -89,6 +89,7 @@ def config_from_connection(
     connection: dict[str, Any],
     password: str | None,
     session_settings: dict[str, str] | None = None,
+    encryption_key: str | None = None,
 ) -> ConnectionConfig:
     """Build a :class:`ConnectionConfig` from a stored connection row + password."""
     return ConnectionConfig(
@@ -100,6 +101,7 @@ def config_from_connection(
         password=password,
         query=connection.get("options") or {},
         session_settings=session_settings or {},
+        encryption_key=encryption_key,
     )
 
 
@@ -115,17 +117,19 @@ def resolve_engine(
     *,
     refresh: bool = False,
     session_settings: dict[str, str] | None = None,
+    encryption_key: str | None = None,
 ) -> tuple[Engine, MetaData]:
     """Return a cached ``(engine, metadata)`` for ``connection`` (reflecting once).
 
     ``session_settings`` (e.g. ``app.current_user_email`` for Postgres RLS) are
-    applied on each connection and are part of the cache key.
+    applied on each connection and are part of the cache key. ``encryption_key``
+    opens an encrypted local file DB (SQLCipher / DuckDB).
     """
     key = (int(connection["id"]), tuple(sorted((session_settings or {}).items())))
     if not refresh and key in _engine_cache:
         return _engine_cache[key]
     engine = build_engine(
-        config_from_connection(connection, password, session_settings)
+        config_from_connection(connection, password, session_settings, encryption_key)
     )
     metadata = reflect_schema(engine)
     _engine_cache[key] = (engine, metadata)

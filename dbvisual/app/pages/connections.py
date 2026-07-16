@@ -29,7 +29,16 @@ _DIALECTS = {
     "Oracle": "oracle",
     "SQLite": "sqlite",
     "DuckDB": "duckdb",
+    "SQLite cifrato (SQLCipher)": "sqlcipher",
 }
+
+# Dialects that use a file passphrase (encryption at rest).
+_ENCRYPTED_DIALECTS = {"sqlcipher", "duckdb"}
+
+
+def _enc_secret_key(connection_id: int) -> str:
+    """SecretStore key holding a connection's file encryption passphrase."""
+    return f"enckey:{connection_id}"
 
 
 def _to_config(data: dict[str, Any], password: str | None) -> ConnectionConfig:
@@ -43,6 +52,7 @@ def _to_config(data: dict[str, Any], password: str | None) -> ConnectionConfig:
         username=data.get("username") or None,
         password=password or None,
         query=data.get("options") or {},
+        encryption_key=data.get("passphrase") or None,
     )
 
 
@@ -63,6 +73,20 @@ def _connection_dialog(on_saved) -> None:
         fields["database"] = ui.input("Database / file path").classes("w-full")
         fields["username"] = ui.input("Username").classes("w-full")
         fields["password"] = ui.input("Password", password=True).classes("w-full")
+        fields["passphrase"] = ui.input(
+            "Passphrase file cifrato (SQLCipher / DuckDB)", password=True
+        ).classes("w-full")
+        enc_note = ui.label(
+            "Passphrase usata solo per DB file cifrati a riposo; salvata come segreto."
+        ).classes("text-xs text-gray-500")
+
+        def _toggle_enc() -> None:
+            show = fields["dialect"].value in _ENCRYPTED_DIALECTS
+            fields["passphrase"].set_visibility(show)
+            enc_note.set_visibility(show)
+
+        fields["dialect"].on_value_change(lambda _e: _toggle_enc())
+        _toggle_enc()
 
         result = ui.label("").classes("text-sm")
 
@@ -74,6 +98,7 @@ def _connection_dialog(on_saved) -> None:
                 "port": fields["port"].value,
                 "database": fields["database"].value,
                 "username": fields["username"].value,
+                "passphrase": fields["passphrase"].value,
             }
             return data, fields["password"].value or ""
 
@@ -109,6 +134,8 @@ def _connection_dialog(on_saved) -> None:
             )
             if password:
                 state.secrets.save_password(conn_id, password)
+            if data.get("passphrase") and data["dialect"] in _ENCRYPTED_DIALECTS:
+                state.secrets.set_secret(_enc_secret_key(conn_id), data["passphrase"])
             dialog.close()
             on_saved()
 
@@ -124,6 +151,7 @@ def _schema_dialog(connection: dict[str, Any]) -> None:
     """Connect using ``connection`` and show tables, columns and FKs."""
     state = get_state()
     password = state.secrets.get_password(connection["id"])
+    encryption_key = state.secrets.get_secret(_enc_secret_key(connection["id"]))
     config = ConnectionConfig(
         dialect=connection["dialect"],
         host=connection.get("host"),
@@ -132,6 +160,7 @@ def _schema_dialog(connection: dict[str, Any]) -> None:
         username=connection.get("username"),
         password=password,
         query=connection.get("options") or {},
+        encryption_key=encryption_key,
     )
 
     with ui.dialog() as dialog, ui.card().classes("w-[720px] h-[560px] gap-3"):
