@@ -248,6 +248,60 @@ scrivibile, le colonne related sono in sola lettura.
 
 ---
 
+## Fase 5 — Report (sola lettura: parametri, filtri e grafici)
+
+Un **Report** è una definition (`kind='report'`) con un `ReportSpec`. È **sola lettura**: non
+aggiorna mai i dati. La sorgente può essere il **query builder** oppure una **query custom
+SQL in sola lettura** (bind-param). I risultati vanno in una `ui.aggrid` read-only con grafici
+`ui.echart` embedded.
+
+| Modulo | Responsabilità |
+| --- | --- |
+| `dbvisual/app/report_service.py` | Caricamento dati (builder/custom), parametri (multi + cascata), filtri AND/OR annidati, aggregazione summary/pivot, SQL read-only. |
+| `dbvisual/app/pages/reports.py` | Lista/crea/apri report; prompt parametri, tabella, ricerca, chart builder ed export. |
+
+### Creare e usare un report
+
+1. **Report → Nuovo report**: nome, applicazione, connessione; scegli **Query builder**
+   (tabella + colonne + correlate) **oppure** **SQL custom** (solo `SELECT`/`WITH`).
+2. **Apri** il report: compila gli eventuali **parametri**, premi **Carica dati**; usa la
+   **ricerca** full-text, l'**ordinamento/raggruppamento** di colonna e **Esporta CSV**.
+
+### Parametri
+
+- **Multi-valore**: es. filtrare per più clienti/stati → `WHERE ... IN (:param)` con bind-param.
+- **A cascata**: il valore scelto in un dropdown popola le opzioni del successivo (query
+  dipendente dal parametro padre). Le liste riusano `resolve_available_values`
+  (colonna/tabella/query/manuale).
+
+### Filtri end-user
+
+- Condizioni semplici, combinazioni **AND/OR** e condizioni **composte annidate** valutate in
+  forma gerarchica (`FilterGroup`/`FilterCondition`). Applicati lato griglia sui risultati
+  già caricati; i parametri di query (WHERE lato DB) si impostano invece nei prompt.
+
+### Grafici (`ui.echart`)
+
+- **Summary / pivot chart**: aggregano i dati (`aggregate_summary`, es. somma vendite per
+  Prodotto × Regione) e plottano gli **aggregati**, distinti dai grafici grezzi.
+- Tipi: colonna, linea/**time-series** (con **zoom** e finestra scorrevole via `dataZoom`),
+  torta. Grafici **incorporati** nella pagina, esportabili come immagine (PNG/SVG di ECharts).
+
+### Query custom SQL (sola lettura)
+
+Le query custom sono validate da `ensure_readonly`: sono ammesse **solo** istruzioni singole
+`SELECT`/`WITH`; qualunque `INSERT/UPDATE/DELETE/DROP/...` o statement multiplo è **rifiutato**.
+I valori passano sempre come **bind-param** (`:param`), mai per concatenazione.
+
+### Predisposizione RLS (session settings)
+
+`ConnectionConfig` accetta ora un parametro opzionale `session_settings` (mappa chiave→valore):
+a ogni nuova connessione esegue i relativi `SET` (es. `timezone`, `search_path`,
+`statement_timeout`, e in futuro `app.current_user_email` per la RLS PostgreSQL della Fase 8).
+Additivo e retro-compatibile; su SQLite è un no-op.
+
+---
+
 ## Esecuzione dei test
 
 I test del core usano **SQLite in-memory**, quindi non richiedono alcun database esterno
@@ -257,7 +311,7 @@ né credenziali.
 pytest
 ```
 
-Output atteso: tutti i test **verdi** (64 test).
+Output atteso: tutti i test **verdi** (78 test).
 
 I test coprono:
 
@@ -279,6 +333,10 @@ I test coprono:
   il salvataggio, submit rule cross-field, form rule (hide/disable), available values con
   **label ≠ value** (salva l'id), salvataggio con **optimistic locking**, e attachment
   (upload → metadati nel campo testo + file su disco, delete del record con **cascade**);
+- Report: round-trip definition `kind='report'` (builder e custom SQL), parametro multi-valore
+  → `WHERE IN` con bind, parametro **a cascata** (opzioni dipendenti dal padre), filtri
+  **AND/OR annidati**, aggregazione **summary/pivot** corretta, full-text che ricalcola i totali,
+  **SQL custom read-only** (scritture rifiutate) con bind-param; `session_settings` sul core;
 - smoke test dell'app NiceGUI: registrazione delle route e bootstrap dello stato.
 
 ---
@@ -324,7 +382,8 @@ with engine.connect() as conn:
   copia/incolla TSV ed export CSV.
 - **Fase 4 — Form** ✅ record singolo (prev/next), input tipizzati, available values
   (label ≠ value), default, validazione, submit/form rules, attachment, optimistic locking.
-- **Fase 5 — Report**: tabellare + grafici (`ui.echart`).
+- **Fase 5 — Report** ✅ sola lettura: parametri multi-valore/cascata, filtri AND/OR annidati,
+  grafici summary/pivot e time-series (`ui.echart`), query custom SQL read-only, export CSV.
 - **Fase 6 — Master-detail**: aggiornamento multi-tabella in transazione.
 
 Dettagli architetturali completi in [docs/spec.md](docs/spec.md).
