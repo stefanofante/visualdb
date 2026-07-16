@@ -9,7 +9,7 @@ transaction and rolls back on any error.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any, Callable, Literal
 
 from sqlalchemy import Connection, Engine, Table, and_, delete, insert, update
 
@@ -142,7 +142,11 @@ def _apply(conn: Connection, op: Operation) -> Any:
 
 
 def save_master_detail(
-    engine: Engine, master_op: Operation, detail_ops: list[Operation]
+    engine: Engine,
+    master_op: Operation,
+    detail_ops: list[Operation],
+    *,
+    link: "Callable[[Any, list[Operation]], None] | None" = None,
 ) -> list[Any]:
     """Execute the master and detail operations in a single transaction.
 
@@ -150,11 +154,19 @@ def save_master_detail(
     ``engine.begin()`` block. Any exception rolls back the entire transaction so
     the database is never left in a partially updated state.
 
+    ``link`` (optional) is called with ``(master_result, detail_ops)`` after the
+    master runs but before the details, letting the caller propagate a freshly
+    generated master primary key into the detail operations (e.g. FK values on
+    new detail rows). It runs inside the same transaction.
+
     Returns the list of per-operation results (master first, then details).
     """
     results: list[Any] = []
     with engine.begin() as conn:
-        results.append(_apply(conn, master_op))
+        master_result = _apply(conn, master_op)
+        results.append(master_result)
+        if link is not None:
+            link(master_result, detail_ops)
         for op in detail_ops:
             results.append(_apply(conn, op))
     return results
