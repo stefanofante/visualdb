@@ -127,6 +127,127 @@ L'eseguibile risultante avvia l'app in modalità desktop senza richiedere Python
 
 ---
 
+## Fase 3 — Sheet (griglia Excel-like editabile)
+
+Uno **Sheet** è una *definition* (`kind='sheet'`) nel metadata store: contiene una
+query-spec e l'id della connessione su cui gira. Aprirlo compila la query col core,
+la esegue e popola una `ui.aggrid` editabile.
+
+| Modulo | Responsabilità |
+| --- | --- |
+| `dbvisual/app/sheet_service.py` | Orchestrazione DB (solo core): risoluzione engine+metadata con cache, `compile_select`, costruzione delle operazioni e salvataggio batch transazionale. |
+| `dbvisual/app/components/grid.py` | Componente `SheetGrid`: `ui.aggrid` editabile, tracking delle modifiche, ricerca, copia/incolla TSV, export CSV. |
+| `dbvisual/app/pages/sheets.py` | Lista sheet, creazione (query-builder minimale) e editor con salvataggio. |
+
+### Creare uno sheet
+
+1. Vai in **Sheet → Nuovo sheet**.
+2. Dai un nome, scegli l'**applicazione** (o creane una nuova) e la **connessione**.
+3. Alla selezione della connessione lo schema viene riflesso: scegli la **tabella
+   principale**, le **colonne** da mostrare e, opzionalmente, le **tabelle correlate**
+   (rilevate via foreign key, aggiunte in **sola lettura**).
+4. **Salva**: lo sheet è persistito come definition `kind='sheet'`.
+
+> Le colonne di primary key della tabella principale sono incluse automaticamente
+> (servono per aggiornare/eliminare le righe) e non sono editabili.
+
+### Usare uno sheet
+
+- **Apri** lo sheet: solo le colonne della `main_table` sono editabili; le colonne
+  delle tabelle correlate (lookup) sono di sola lettura.
+- **Ordinamento / filtro** per colonna e **ricerca full-text** (quick filter) sono nativi.
+- **Aggiungi riga** / **Elimina selezionate** preparano insert/delete.
+- **Salva**: tutte le modifiche (insert/update/delete) sono applicate in **una singola
+  transazione** tramite il core (`crud`); in caso di errore viene fatto **rollback
+  completo** e la griglia è ricaricata dai dati reali. Le colonne related non vengono
+  mai scritte.
+
+### Validazione, campi calcolati e totali
+
+- **Validazione di cella**: si configurano regole per colonna (`FieldRule`: required,
+  min/max, lunghezza, caratteri ammessi/vietati, regex, email, telefono, zip, url, carta
+  di credito, vincoli su date). Le celle non valide sono **sottolineate in rosso** e il
+  **Salva è bloccato** finché restano errori. Il motore (`dbvisual/app/validation.py`) è
+  riutilizzabile anche dai Form (Fase 4).
+- **Campi calcolati (formula)**: colonne in sola lettura la cui espressione referenzia altre
+  colonne della stessa riga (es. `qty * price`), ricalcolate a ogni edit. Il valutatore
+  (`dbvisual/app/formula.py`) è **limitato e sicuro**: whitelist di operatori/funzioni,
+  nessun `eval` di codice arbitrario.
+- **Totali di colonna**: riga fissa in fondo (pinned bottom row) con somma/media/conteggio,
+  aggiornata istantaneamente a ogni modifica e **coerente con il quick filter attivo**.
+
+### Optimistic locking (concorrenza)
+
+Gli update usano il locking ottimistico: la griglia conserva i **valori originali** di ogni
+riga caricata e l'`UPDATE` include un guard `WHERE PK AND valori-originali`. Se un record è
+stato modificato da altri nel frattempo l'update tocca **0 righe** → il core solleva
+`ConflictError`, l'intera transazione fa **rollback** e la griglia viene ricaricata con un
+messaggio "il record è stato modificato da altri, riprova". Il parametro è **opzionale** e
+additivo su `crud.update_record` (l'API e i test esistenti restano invariati).
+
+### Copia / incolla ed export
+
+- **Copia (TSV)**: copia l'intera griglia negli appunti in formato compatibile con Excel.
+- **Incolla da Excel (TSV)**: apre un dialog dove incollare celle da Excel; le colonne
+  editabili vengono riempite in ordine e le righe aggiunte come insert al salvataggio.
+- **Esporta CSV**: scarica il contenuto dello sheet (funzione community di AG Grid).
+
+> **Nota su AG Grid Community.** La selezione a range e la clipboard nativa sono funzioni
+> *Enterprise*; per questo copia/incolla usano un percorso TSV affidabile e l'export è in
+> CSV. Anche il *row grouping* visuale richiede Enterprise: il selettore "Raggruppa per"
+> imposta i flag ma la resa a gruppi è disponibile solo con AG Grid Enterprise; ordinamento,
+> filtro e quick-filter (community) funzionano pienamente.
+
+---
+
+## Fase 4 — Form (data entry su un record alla volta)
+
+Un **Form** è una definition (`kind='form'`) con un `FormSpec` (query-spec + connessione +
+config dei campi + regole). Mostra i record **uno alla volta**; solo la `main_table` è
+scrivibile, le colonne related sono in sola lettura.
+
+| Modulo | Responsabilità |
+| --- | --- |
+| `dbvisual/app/form_service.py` | `FormSpec`, default, validazione, submit/form rules, available values, save/delete con optimistic locking (solo core). |
+| `dbvisual/app/components/form_field.py` | Campo configurabile: input per tipo dato, dropdown label≠value, validazione visiva, hide/disable, attachment. |
+| `dbvisual/app/pages/forms.py` | Lista form, creazione (query builder) e editor con navigazione record. |
+| `dbvisual/meta/attachments.py` | Storage locale dei file (metadati JSON nel DB, byte su disco via `platformdirs`). |
+
+### Creare e usare un form
+
+1. **Form → Nuovo form**: nome, applicazione, connessione; scegli tabella principale,
+   colonne ed eventuali tabelle correlate (read-only). Si salva come definition `kind='form'`.
+2. **Apri** il form: naviga i record con **‹ ›** e l'indicatore *"Record N di M"*; usa
+   **Nuovo / Salva / Elimina**.
+
+### Input, available values, default e validazione
+
+- **Tipi di input** derivati dal tipo dato: testo (single/multiline), numero, data
+  (date picker), booleano (checkbox), dropdown se ci sono *available values*.
+- **Available values** con sorgenti: valori esistenti della colonna, da **tabella**, da
+  **query**, **lista manuale**. Supporto **LABEL ≠ VALUE**: il dropdown mostra l'etichetta
+  (es. nome cliente) ma **salva il value** (es. l'id). Opzione *"consenti nuovi valori"*.
+- **Default value** applicato ai nuovi record.
+- **Validazione per campo** (stesso motore dello Sheet): required, min/max, lunghezza,
+  caratteri ammessi/vietati, regex, email/telefono/zip/url, carta di credito, vincoli data.
+  I campi non validi sono evidenziati e il **salvataggio è bloccato** finché restano errori.
+
+### Regole di form e attachment
+
+- **Submit rules** (cross-field): regole sull'intero record prima del salvataggio (es.
+  "almeno uno tra A e B compilato"); se violate, il submit è bloccato con messaggio.
+- **Form rules**: nascondi / disabilita / abilita un campo in base ai valori di altri campi,
+  rivalutate a ogni modifica.
+- **Attachment**: un campo può essere di tipo *attachment*. Il **file non entra nel DB**: nel
+  campo testo si salvano solo i **metadati JSON** (`id`, `filename`, `content_type`, `size`),
+  mentre i byte stanno su **disco locale** (cartella app per applicazione/record). Upload,
+  download e delete supportati; alla **cancellazione del record** i file vengono rimossi
+  (cascade).
+- Il **salvataggio** usa il core in transazione con **optimistic locking** (come lo Sheet):
+  un conflitto ricarica il record senza scrivere.
+
+---
+
 ## Esecuzione dei test
 
 I test del core usano **SQLite in-memory**, quindi non richiedono alcun database esterno
@@ -136,7 +257,7 @@ né credenziali.
 pytest
 ```
 
-Output atteso: tutti i test **verdi** (28 test).
+Output atteso: tutti i test **verdi** (64 test).
 
 I test coprono:
 
@@ -148,6 +269,16 @@ I test coprono:
 - CRUD del metadata store (connessioni/applicazioni/definizioni) su SQLite temporaneo;
 - round-trip delle password col backend di fallback **Fernet** (il keyring reale non
   viene toccato nei test) e verifica che il vault su disco sia cifrato;
+- Sheet: round-trip della definition `kind='sheet'`, `compile_select` da query-spec salvata
+  (join + lookup read-only), salvataggio batch (insert/update/delete) in transazione con
+  **rollback** su errore, e verifica che le colonne related **non** vengano scritte;
+- **optimistic locking**: conflitto rilevato (core + batch) con rollback e nessuna scrittura;
+- **valutatore di formule**: calcolo corretto e rifiuto di espressioni non ammesse;
+- **validazione di cella**: regole per colonna (required, range, email, regex, Luhn, ecc.);
+- Form: round-trip definition `kind='form'`, default sui nuovi record, validazione che blocca
+  il salvataggio, submit rule cross-field, form rule (hide/disable), available values con
+  **label ≠ value** (salva l'id), salvataggio con **optimistic locking**, e attachment
+  (upload → metadati nel campo testo + file su disco, delete del record con **cascade**);
 - smoke test dell'app NiceGUI: registrazione delle route e bootstrap dello stato.
 
 ---
@@ -188,8 +319,11 @@ with engine.connect() as conn:
 - **Fase 1 — Core** ✅ connections, introspect, queryspec, compiler, crud.
 - **Fase 2 — Shell + Connessioni + Schema** ✅ metadata store, cifratura credenziali,
   guscio NiceGUI, gestione connessioni e browser schema.
-- **Fase 3 — Sheet**: griglia Excel-like (`ui.aggrid`).
-- **Fase 4 — Form**: record singolo, validazione, campi condizionali.
+- **Fase 3 — Sheet** ✅ griglia Excel-like (`ui.aggrid`) editabile, salvataggio batch
+  transazionale con **optimistic locking**, validazione di cella, campi calcolati/totali,
+  copia/incolla TSV ed export CSV.
+- **Fase 4 — Form** ✅ record singolo (prev/next), input tipizzati, available values
+  (label ≠ value), default, validazione, submit/form rules, attachment, optimistic locking.
 - **Fase 5 — Report**: tabellare + grafici (`ui.echart`).
 - **Fase 6 — Master-detail**: aggiornamento multi-tabella in transazione.
 
