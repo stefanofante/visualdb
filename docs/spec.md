@@ -11,7 +11,7 @@ macchina dell'utente. Nessun cloud, nessun account remoto, nessun multi-tenant.
 - Software installabile e **eseguito in locale** su una singola macchina (Windows / Linux / macOS).
 - **BYOD (Bring Your Own Database)**: si connette a DB *già esistenti* dell'utente.
 - Copre i tre pilastri di Visual DB: **Form**, **Sheet**, **Report**.
-- **Architettura aperta e multi-DB**: PostgreSQL, MySQL/MariaDB, SQL Server, Oracle, SQLite.
+- **Architettura aperta e multi-DB**: PostgreSQL, MySQL/MariaDB, SQL Server, Oracle, SQLite, DuckDB.
 - Concetto centrale: tutto è generato da una **query-spec** (JSON). Form/Sheet/Report sono
   soltanto *render* diversi della stessa spec.
 - **Layout moderno**: interfaccia pulita, griglie **Excel-like**, **grafici embedded**, e
@@ -98,6 +98,7 @@ main.py                # entrypoint (--mode desktop | web)
 | SQL Server | `pyodbc` | `mssql+pyodbc://` |
 | Oracle | `oracledb` | `oracle+oracledb://` |
 | SQLite | built-in | `sqlite:///path` |
+| DuckDB | `duckdb_engine` | `duckdb:///path` · `duckdb:///:memory:` |
 
 ## 6. Requisiti UI/UX
 
@@ -130,6 +131,14 @@ Layout moderno, pensato per l'uso quotidiano da parte di utenti non tecnici.
 - In modalità web, bind esclusivo su `127.0.0.1`; nessuna porta esposta all'esterno.
 - Credenziali dei DB **mai in chiaro** su disco: usare il portachiavi di sistema
   (fallback a file cifrato con `cryptography.Fernet`).
+- **Segreti generici** (password, passphrase dei file cifrati, API key LLM) via lo stesso
+  `meta/secrets` (`set_secret`/`get_secret`), mai in chiaro nel metadata store né nei log.
+- **Database file cifrati a riposo** (opzionale): SQLite via **SQLCipher** (`PRAGMA key`;
+  richiede il driver `pysqlcipher3`/`sqlcipher3`, altrimenti l'opzione è disabilitata con
+  messaggio) e **DuckDB** via cifratura nativa (`ATTACH … (ENCRYPTION_KEY …)`, DuckDB ≥ 1.4;
+  verificato su 1.5.x). La passphrase è un segreto in `meta/secrets`.
+- **Assistente AI** (opzionale, off di default): l'SQL generato passa da `ensure_readonly`
+  (solo `SELECT`/`WITH`) ed è mostrato per revisione prima dell'esecuzione; API key come segreto.
 - Tutte le query parametrizzate con bind-param (no string concatenation → no SQL injection).
 
 ## 8. Funzionalità per fasi

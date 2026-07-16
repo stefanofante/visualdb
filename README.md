@@ -68,6 +68,7 @@ Questa fase implementa **solo** il layer `core` DB-agnostico, senza UI e senza A
 | SQL Server | `pyodbc` | `mssql+pyodbc://` |
 | Oracle | `oracledb` | `oracle+oracledb://` |
 | SQLite | built-in | `sqlite:///path` |
+| DuckDB | `duckdb_engine` | `duckdb:///path` · `duckdb:///:memory:` |
 
 ---
 
@@ -88,7 +89,7 @@ pip install -e ".[dev]"
 I driver dei database sono **opzionali** e si installano solo per il DB che serve:
 
 ```powershell
-pip install -e ".[postgresql]"      # oppure mysql / mssql / oracle
+pip install -e ".[postgresql]"      # oppure mysql / mssql / oracle / duckdb
 pip install -e ".[all-drivers]"     # tutti i driver insieme
 ```
 
@@ -387,6 +388,45 @@ La RLS **non è implementata dall'app**: è **delegata a PostgreSQL** (l'utente 
 
 ---
 
+## Database file locali cifrati a riposo
+
+È possibile aprire/creare file di DB **cifrati con una passphrase** (opzionale, additivo):
+
+- **SQLite cifrato (SQLCipher)**: dialetto `sqlcipher`; la chiave è applicata con `PRAGMA key`
+  a ogni connessione. Richiede un driver SQLCipher separato (`pysqlcipher3` o `sqlcipher3`):
+  non è lo SQLite di sistema. Se il driver **non è installato**, l'opzione è disabilitata con
+  messaggio chiaro (nessun crash).
+- **DuckDB cifrato**: cifratura nativa DuckDB (≥ 1.4, verificato su 1.5.x) via
+  `ATTACH '<file>' (ENCRYPTION_KEY '<passphrase>')`; dbvisual la applica su una connessione
+  singola (`StaticPool`) rendendo il DB cifrato il catalogo di default.
+- La **passphrase** è un **segreto** in `meta/secrets` (chiave `enckey:<id>`), mai in chiaro nel
+  metadata store né nei log. Nella pagina Connessioni compare il campo passphrase per questi tipi.
+
+> **Packaging (limite reale).** SQLCipher non è incluso nello SQLite standard: va installato a
+> parte e **incluso nel bundle** `nicegui-pack`. Documenta/verifica la disponibilità del driver
+> sulla macchina di distribuzione. La cifratura DuckDB non richiede driver aggiuntivi.
+
+---
+
+## Assistente AI (NL → SQL, opzionale — solo Report)
+
+Generatore "descrivi in linguaggio naturale → SQL" per i **Report**, tramite un LLM a scelta e
+**API key dell'utente**. **Off di default**; si attiva da *Report → Impostazioni AI*.
+
+- Provider supportati: **Anthropic (Claude)**, **OpenAI (ChatGPT)**, **Google (Gemini)**,
+  **DeepSeek** — semplici chiamate HTTP, nessun SDK obbligatorio.
+- L'**API key** è un **segreto** in `meta/secrets` (chiave `ai:<provider>`) — riusa lo stesso
+  meccanismo delle password/webhook, mai in chiaro nel metadata store né nei log.
+- Contesto inviato al modello: **nomi di tabelle/colonne** (schema riflesso) + la richiesta.
+- L'SQL generato è **sempre mostrato per revisione** e passa da `ensure_readonly` (**solo**
+  `SELECT`/`WITH`): **nessuna esecuzione automatica**; le scritture sono rifiutate.
+- **Privacy**: attivando l'AI, struttura del DB e testo della richiesta vengono inviati al
+  **provider cloud** scelto (costo per token a carico dell'utente). L'avviso è mostrato in UI.
+- Integrazione: pulsante **"Genera con AI"** solo nel query builder **custom SQL** dei Report,
+  non nei builder di form/sheet.
+
+---
+
 ## Esecuzione dei test
 
 I test del core usano **SQLite in-memory**, quindi non richiedono alcun database esterno
@@ -396,7 +436,7 @@ né credenziali.
 pytest
 ```
 
-Output atteso: tutti i test **verdi** (103 test).
+Output atteso: tutti i test **verdi** (124 test).
 
 I test coprono:
 
