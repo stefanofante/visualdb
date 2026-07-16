@@ -302,6 +302,44 @@ Additivo e retro-compatibile; su SQLite è un no-op.
 
 ---
 
+## Fase 6 — Master-Detail (salvataggio atomico)
+
+Un **master-detail** è una definition (`kind='master_detail'`) con un `MasterDetailSpec`: una
+query **master** (record singolo, riusa il Form) e una o più **detail** (grid, riusa lo Sheet).
+Ogni detail ha **esattamente un parametro**, valorizzato con la **PK del master** corrente.
+Master + tutti i detail vengono salvati in **una sola transazione**.
+
+| Modulo | Responsabilità |
+| --- | --- |
+| `dbvisual/app/master_detail_service.py` | `MasterDetailSpec`, validazione (un solo parametro), rilevamento FK, caricamento detail, piano di salvataggio atomico con propagazione PK. |
+| `dbvisual/app/pages/master_detail.py` | Lista/crea/apri; form master (prev/next) + grid detail editabili, salvataggio "Salva tutto". |
+
+### Creare e usare un master-detail
+
+1. **Master-Detail → Nuovo**: nome, connessione, **tabella master** e una o più **tabelle
+   detail**. La FK detail→master è rilevata automaticamente (`detect_foreign_keys`) e usata
+   come parametro unico della detail query.
+2. **Apri**: naviga i master con **‹ ›**; per il master corrente ogni detail mostra solo le
+   righe collegate. Modifica master e detail, poi **Salva tutto**.
+
+### Casi supportati
+
+- **One-to-many**: FK nel lato "molti" (es. `Orders` master → `LineItems` via `order_id`).
+- **Many-to-many**: la **tabella di giunzione** è la main table del detail; la FK verso il
+  master è il parametro e la seconda entità è una tabella **related read-only** per l'etichetta.
+
+### Salvataggio atomico
+
+- Tutte le modifiche (master + insert/update/delete su ogni detail) sono applicate in **una
+  transazione** via `core.crud.save_master_detail`; un errore su un qualunque detail fa
+  **rollback anche del master**.
+- **Master nuovo**: la PK auto-generata viene **propagata come FK** ai detail nuovi *dentro la
+  stessa transazione* (parametro additivo `link` di `save_master_detail`).
+- **Optimistic locking** su master e detail: un conflitto annulla tutto e ricarica.
+- Le colonne di tabelle **related non vengono mai scritte**.
+
+---
+
 ## Esecuzione dei test
 
 I test del core usano **SQLite in-memory**, quindi non richiedono alcun database esterno
@@ -311,7 +349,7 @@ né credenziali.
 pytest
 ```
 
-Output atteso: tutti i test **verdi** (78 test).
+Output atteso: tutti i test **verdi** (88 test).
 
 I test coprono:
 
@@ -337,6 +375,11 @@ I test coprono:
   → `WHERE IN` con bind, parametro **a cascata** (opzioni dipendenti dal padre), filtri
   **AND/OR annidati**, aggregazione **summary/pivot** corretta, full-text che ricalcola i totali,
   **SQL custom read-only** (scritture rifiutate) con bind-param; `session_settings` sul core;
+- Master-detail: round-trip `kind='master_detail'`, la detail query deve avere **un solo**
+  parametro, rilevamento FK detail→master, caricamento dei soli detail collegati, **salvataggio
+  atomico** one-to-many (errore su un detail → rollback del master), **PK del master nuovo
+  propagata** alle FK dei detail, many-to-many via giunzione (related non scritta), e
+  **optimistic locking** con rollback totale;
 - smoke test dell'app NiceGUI: registrazione delle route e bootstrap dello stato.
 
 ---
@@ -384,6 +427,7 @@ with engine.connect() as conn:
   (label ≠ value), default, validazione, submit/form rules, attachment, optimistic locking.
 - **Fase 5 — Report** ✅ sola lettura: parametri multi-valore/cascata, filtri AND/OR annidati,
   grafici summary/pivot e time-series (`ui.echart`), query custom SQL read-only, export CSV.
-- **Fase 6 — Master-detail**: aggiornamento multi-tabella in transazione.
+- **Fase 6 — Master-detail** ✅ master (form) + detail (grid) legati dalla PK, salvataggio
+  **atomico** one-to-many e many-to-many con propagazione PK e optimistic locking.
 
 Dettagli architetturali completi in [docs/spec.md](docs/spec.md).

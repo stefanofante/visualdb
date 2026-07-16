@@ -147,7 +147,7 @@ Layout moderno, pensato per l'uso quotidiano da parte di utenti non tecnici.
   condizionali e **attachment fields** (vedi §10).
 - **Fase 5 — Report** *(FATTA, 78 test verdi)*: tabellare + grafici `ui.echart` embedded (raggruppa/ordina/filtra, export immagine);
   parametri multi-valore e a cascata, filtri AND/OR annidati, summary/pivot chart e time-series con zoom; query custom SQL sola lettura (vedi §10).
-- **Fase 6 — Master-detail**: master (form) + detail (grid) legati dalla PK del master, commit
+- **Fase 6 — Master-detail** *(FATTA, 88 test verdi)*: master (form) + detail (grid) legati dalla PK del master, commit
   atomico; copre one-to-many e many-to-many (vedi §10).
 - **Fase 7 — Automation / Webhooks**: su create/update/delete invia un webhook HTTP POST (JSON)
   a URL configurati (Zapier/Slack/Discord/endpoint proprio); dispatch opzionale dal core, invio
