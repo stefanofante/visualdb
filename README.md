@@ -8,6 +8,34 @@ essere locali o remoti, ma l'app e i suoi metadati restano sempre in locale.
 Concetto centrale: tutto è generato da una **query-spec** (JSON). Form, sheet e report
 sono soltanto *render* diversi della stessa specifica.
 
+**Applicazione monolitica**: un solo codebase Python (UI = [NiceGUI](https://nicegui.io/)),
+un solo processo, un solo eseguibile. Lo stesso codice gira come **finestra desktop nativa**
+o come **web app** locale su `127.0.0.1`. Nessun frontend/backend separato, nessun build JS.
+
+---
+
+## Avvio dell'applicazione
+
+Dopo l'installazione (vedi sotto), avvia l'app dall'entrypoint:
+
+```powershell
+python main.py --mode desktop      # default: finestra desktop nativa (pywebview)
+python main.py --mode web          # web app locale su http://127.0.0.1:8080
+```
+
+In alternativa, tramite il comando installato:
+
+```powershell
+dbvisual --mode desktop
+dbvisual --mode web --host 127.0.0.1 --port 8080
+```
+
+> **Nota su NiceGUI e native mode.** NiceGUI è fissato a `>=3,<4` in `pyproject.toml`:
+> con questa serie `ui.echart` (grafici) ed `ui.aggrid` (griglie) renderizzano
+> correttamente anche in modalità desktop nativa. Se dopo un aggiornamento la finestra
+> nativa mostra una pagina bianca, ripristina una versione nota di NiceGUI (3.x) e
+> aggiorna questa nota.
+
 ---
 
 ## Fase 1 — Core (questo pacchetto)
@@ -66,6 +94,39 @@ pip install -e ".[all-drivers]"     # tutti i driver insieme
 
 ---
 
+## Fase 2 — Shell + Connessioni + Schema
+
+La Fase 2 aggiunge il guscio dell'app NiceGUI, la persistenza locale e la gestione
+delle connessioni con browser dello schema.
+
+| Modulo | Responsabilità |
+| --- | --- |
+| `dbvisual/meta/models.py` | Schema SQLAlchemy Core del metadata store (`connections`, `applications`, `definitions`). |
+| `dbvisual/meta/store.py` | CRUD su connessioni/applicazioni/definizioni (SQLite locale via `platformdirs`). |
+| `dbvisual/meta/secrets.py` | Password DB cifrate: **keyring** (portachiavi OS) con fallback a file **Fernet**. |
+| `dbvisual/app/shell.py` | Layout: header + navigazione laterale. |
+| `dbvisual/app/pages/connections.py` | Lista connessioni, form nuova/modifica, **Testa**, **Salva**, **Sfoglia schema**. |
+| `dbvisual/app/main.py` · `main.py` | Bootstrap dello stato + `ui.run` (desktop/web) ed entrypoint CLI. |
+
+- **Metadata store**: file SQLite nella cartella dati utente (`platformdirs`).
+- **Credenziali**: mai in chiaro nel metadata store; keyring o file cifrato Fernet
+  con permessi ristretti.
+- La pagina *Connessioni* usa direttamente il core (`build_engine`, `test_connection`,
+  `reflect_schema`, `list_tables`, `get_columns`, `detect_foreign_keys`): nessuna logica DB
+  duplicata.
+
+### Packaging (eseguibile portabile)
+
+Bundle standalone con **`nicegui-pack`** (basato su PyInstaller):
+
+```powershell
+nicegui-pack --onefile --name dbvisual main.py
+```
+
+L'eseguibile risultante avvia l'app in modalità desktop senza richiedere Python installato.
+
+---
+
 ## Esecuzione dei test
 
 I test del core usano **SQLite in-memory**, quindi non richiedono alcun database esterno
@@ -75,7 +136,7 @@ né credenziali.
 pytest
 ```
 
-Output atteso: tutti i test **verdi**.
+Output atteso: tutti i test **verdi** (28 test).
 
 I test coprono:
 
@@ -83,7 +144,11 @@ I test coprono:
 - `compile_select` con join automatico + filtro parametrico (incluso `in` multi-valore)
   e verifica che i valori siano *bound* (no SQL injection);
 - `insert` / `update` / `delete` sulla `main_table`;
-- `save_master_detail` con **rollback** corretto quando una detail-op fallisce.
+- `save_master_detail` con **rollback** corretto quando una detail-op fallisce;
+- CRUD del metadata store (connessioni/applicazioni/definizioni) su SQLite temporaneo;
+- round-trip delle password col backend di fallback **Fernet** (il keyring reale non
+  viene toccato nei test) e verifica che il vault su disco sia cifrato;
+- smoke test dell'app NiceGUI: registrazione delle route e bootstrap dello stato.
 
 ---
 
@@ -120,9 +185,12 @@ with engine.connect() as conn:
 
 ## Roadmap
 
-- **Fase 1 — Core** ✅ (questo pacchetto)
-- **Fase 2 — API**: FastAPI su `127.0.0.1`, metadata store SQLite, cifratura credenziali.
-- **Fase 3 — Sheet**: griglia CRUD.
+- **Fase 1 — Core** ✅ connections, introspect, queryspec, compiler, crud.
+- **Fase 2 — Shell + Connessioni + Schema** ✅ metadata store, cifratura credenziali,
+  guscio NiceGUI, gestione connessioni e browser schema.
+- **Fase 3 — Sheet**: griglia Excel-like (`ui.aggrid`).
 - **Fase 4 — Form**: record singolo, validazione, campi condizionali.
-- **Fase 5 — Report**: tabellare + grafici.
-- **Fase 6 — Master-detail**: aggiornamento multi-tabella in transazione (UI).
+- **Fase 5 — Report**: tabellare + grafici (`ui.echart`).
+- **Fase 6 — Master-detail**: aggiornamento multi-tabella in transazione.
+
+Dettagli architetturali completi in [docs/spec.md](docs/spec.md).
