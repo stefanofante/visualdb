@@ -17,6 +17,8 @@ from dbvisual.app import state as app_state
 # Importing the page modules registers their routes with NiceGUI.
 from dbvisual.app.pages import applications as _applications  # noqa: F401
 from dbvisual.app.pages import connections as _connections  # noqa: F401
+from dbvisual.app.pages import forms as _forms  # noqa: F401
+from dbvisual.app.pages import sheets as _sheets  # noqa: F401
 
 Mode = Literal["desktop", "web"]
 
