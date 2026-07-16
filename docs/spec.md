@@ -165,9 +165,12 @@ Layout moderno, pensato per l'uso quotidiano da parte di utenti non tecnici.
 - **Fase 8 — Row-Level Security (PostgreSQL)** *(FATTA, 103 test verdi)*: RLS delegata a
   Postgres (policy SQL dell'utente); dbvisual passa l'identità via `SET app.current_user_email`;
   identità locale, flag RLS su form/sheet (solo Postgres) via `session_settings` (vedi §10).
-- **Fase 9 — Gestione schema / Database tab (DDL)** *(pianificata)*: operazioni di **scrittura**
+- **Fase 9 — Gestione schema / Database tab (DDL)** *(FATTA, 143 test verdi)*: operazioni di **scrittura**
   sullo schema (create/drop tabelle, add/remove colonne, FK, diagramma, import/export CSV, DDL
   generato da AI) con revisione ed esecuzione **manuale**, mai automatica (vedi §10).
+- **Impostazioni** *(FATTA)*: pagina `/settings` come **fonte unica** di configurazione — AI
+  (provider/modello/API key via `meta/secrets`), identità RLS (`app/identity`) e opzioni generali;
+  orchestra i moduli esistenti senza duplicarli.
 
 ## 9. Requisiti non funzionali
 
@@ -394,7 +397,7 @@ enforcement lato app.
 - **Integrazione**: pulsante "Genera con AI" **solo** nel query builder dei **Report** (dove sono
   ammesse le query custom), non nei builder di form/sheet (che restano query builder strutturati).
 
-### Fase 9 — Gestione schema / Database tab (DDL) [pianificata, non implementata]
+### Fase 9 — Gestione schema / Database tab (DDL)
 
 - **Scopo**: creare e gestire lo schema del DB senza strumenti esterni (come il "Database tab" di
   Visual DB). Finora dbvisual fa solo **introspezione in lettura**; questa fase introduce le
@@ -412,3 +415,25 @@ enforcement lato app.
 - **Dialetto**: il DDL dipende dal dialetto (Postgres / MySQL / SQL Server / Oracle / SQLite /
   DuckDB): usare SQLAlchemy dove possibile o generazione per-dialetto; documentare i limiti.
 - **Prerequisito permessi**: l'utente di connessione deve avere i privilegi **DDL** sul database.
+
+**Implementazione**
+- `core/schema_ddl.py`: `compose_*` (create/drop table, add/drop column, add/drop FK, rename)
+  restituisce il **testo SQL**; `execute_ddl` lo esegue in transazione = due passi distinti.
+  Type mapping logico → tipi SQLAlchemy per-dialetto; `DDLNotSupported`/`DDLPermissionError`.
+  **Limite noto**: SQLite non supporta ADD/DROP FK via `ALTER` (usare FK inline in create).
+- `app/pages/schema.py`: browser + editor con dialog **"Rivedi ed esegui"** (SQL mostrato,
+  **doppia conferma** per operazioni distruttive), import/export CSV, diagramma FK (`ui.mermaid`).
+- `app/schema_service.py`: helper CSV (inferisce colonne, `csv_create_table_ddl`, `table_to_csv`)
+  e `generate_ddl_via_ai` (riusa il provider LLM con un system prompt DDL; sempre per revisione).
+
+### Impostazioni (pagina `/settings`)
+
+- **Fonte unica** di configurazione dell'app; orchestra i moduli esistenti senza duplicarli.
+- **AI**: `app/ai/settings` + `meta/secrets`. Abilita/disabilita (off di default), provider,
+  modello, **API key** salvata **solo** come segreto (`ai:<provider>`); mostrata come
+  *impostata/non impostata* (mai il valore), con sostituisci/elimina e **Testa** (mockabile).
+- **Identità / RLS**: `app/identity` — email `app.current_user_email` (vuota = RLS inattiva).
+- **Generale**: modalità di avvio preferita (`app/app_settings`) e **cartella dati utente**
+  (`platformdirs`) in sola lettura per trasparenza (metadata store, allegati, vault dei segreti).
+- I dialog contestuali AI (`app/ai/ui.py`) leggono/scrivono la **stessa** config e gli stessi
+  segreti della pagina Impostazioni.

@@ -427,6 +427,45 @@ Generatore "descrivi in linguaggio naturale → SQL" per i **Report**, tramite u
 
 ---
 
+## Database tab — gestione schema (DDL)
+
+La pagina **Database** permette di **creare e modificare lo schema** (DDL) senza strumenti
+esterni. È il primo canale di **scrittura sullo schema**, con la sicurezza al centro.
+
+| Modulo | Responsabilità |
+| --- | --- |
+| `dbvisual/core/schema_ddl.py` | Composizione (`compose_*`) ed esecuzione (`execute_ddl`) DDL multi-dialetto (due passi distinti). |
+| `dbvisual/app/schema_service.py` | Import/export CSV e generazione DDL assistita da AI. |
+| `dbvisual/app/pages/schema.py` | Browser schema + editor visuale con revisione ed esecuzione del DDL. |
+
+- **Rivedi ed esegui**: ogni azione (crea tabella, aggiungi/elimina colonna, elimina tabella,
+  import CSV) **compone il DDL e mostra l'SQL esatto**; l'esecuzione avviene **solo dopo conferma**.
+  Le operazioni **distruttive** (`DROP`, drop colonna) richiedono **doppia conferma** con avviso.
+- Il DDL è un **canale separato** da `ensure_readonly` (che resta per le SELECT dei Report):
+  non è mai eseguito automaticamente.
+- **Type mapping** logico → tipi reali per-dialetto; **import/export CSV**; **diagramma FK**
+  (`ui.mermaid`). **Genera con AI**: il provider LLM propone il `CREATE TABLE` per il dialetto,
+  sempre mostrato per revisione (off di default).
+- **Limiti noti**: SQLite non supporta `ADD/DROP FOREIGN KEY` via `ALTER` (usa la FK inline nel
+  `CREATE TABLE`). Serve un utente con **privilegi DDL**; un errore di permessi dà un messaggio
+  chiaro (nessun crash).
+
+---
+
+## Pagina Impostazioni (`/settings`)
+
+Unico punto di configurazione dell'app, che **orchestra i moduli esistenti** (nessun secondo
+sistema di config o segreti):
+
+- **AI**: attiva/disattiva (off di default), provider (Claude/OpenAI/Gemini/DeepSeek), modello e
+  **API key**. La chiave si salva **solo** via `meta/secrets` (`ai:<provider>`) ed è mostrata come
+  **“impostata / non impostata”** (mai il valore), con sostituisci/elimina e **Testa**.
+- **Identità / RLS**: email `app.current_user_email` (vuota = RLS inattiva), via `app/identity`.
+- **Generale**: modalità di avvio preferita e **cartella dati utente** (`platformdirs`) in sola
+  lettura (dove stanno metadata store, allegati e vault dei segreti — mai in chiaro).
+
+---
+
 ## Esecuzione dei test
 
 I test del core usano **SQLite in-memory**, quindi non richiedono alcun database esterno
@@ -436,7 +475,7 @@ né credenziali.
 pytest
 ```
 
-Output atteso: tutti i test **verdi** (124 test).
+Output atteso: tutti i test **verdi** (143 test).
 
 I test coprono:
 
