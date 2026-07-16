@@ -16,6 +16,14 @@ from sqlalchemy import Connection, Engine, Table, and_, delete, insert, update
 OpKind = Literal["insert", "update", "delete"]
 
 
+class ConflictError(RuntimeError):
+    """Raised when an optimistic-locking guarded update matches 0 rows.
+
+    Signals that the record changed (or was removed) after it was loaded, so the
+    caller should reload and retry.
+    """
+
+
 @dataclass(slots=True)
 class Operation:
     """A single write operation to be executed within a transaction.
@@ -23,12 +31,17 @@ class Operation:
     * ``insert``: ``values`` holds the row to add.
     * ``update``: ``pk_values`` locates the row, ``values`` holds the changes.
     * ``delete``: ``pk_values`` locates the row to remove.
+
+    ``expected`` (update only, optional) adds original-value guard conditions to
+    the WHERE clause for optimistic locking; if the guarded update matches no
+    rows a :class:`ConflictError` is raised.
     """
 
     kind: OpKind
     table: Table
     values: dict[str, Any] | None = None
     pk_values: dict[str, Any] | None = None
+    expected: dict[str, Any] | None = None
 
 
 def _pk_where(table: Table, pk_values: dict[str, Any]):
@@ -48,12 +61,21 @@ def _exec_insert(conn: Connection, table: Table, values: dict[str, Any]) -> Any:
 
 
 def _exec_update(
-    conn: Connection, table: Table, pk_values: dict[str, Any], values: dict[str, Any]
+    conn: Connection,
+    table: Table,
+    pk_values: dict[str, Any],
+    values: dict[str, Any],
+    expected: dict[str, Any] | None = None,
 ) -> int:
-    """Update the row identified by ``pk_values``; return affected row count."""
-    result = conn.execute(
-        update(table).where(_pk_where(table, pk_values)).values(**values)
-    )
+    """Update the row identified by ``pk_values``; return affected row count.
+
+    When ``expected`` is given, its column/value pairs are added to the WHERE
+    clause (optimistic locking guard).
+    """
+    conditions = [_pk_where(table, pk_values)]
+    if expected:
+        conditions.append(and_(*(table.c[col] == val for col, val in expected.items())))
+    result = conn.execute(update(table).where(and_(*conditions)).values(**values))
     return result.rowcount
 
 
@@ -70,11 +92,25 @@ def insert_record(engine: Engine, table: Table, values: dict[str, Any]) -> Any:
 
 
 def update_record(
-    engine: Engine, table: Table, pk_values: dict[str, Any], values: dict[str, Any]
+    engine: Engine,
+    table: Table,
+    pk_values: dict[str, Any],
+    values: dict[str, Any],
+    expected: dict[str, Any] | None = None,
 ) -> int:
-    """Update the row matching ``pk_values`` and return the affected row count."""
+    """Update the row matching ``pk_values`` and return the affected row count.
+
+    ``expected`` (optional) enables optimistic locking: the update also matches
+    on the supplied original values and raises :class:`ConflictError` if no row
+    is affected (the record changed since it was loaded).
+    """
     with engine.begin() as conn:
-        return _exec_update(conn, table, pk_values, values)
+        affected = _exec_update(conn, table, pk_values, values, expected)
+        if expected is not None and affected == 0:
+            raise ConflictError(
+                "Il record è stato modificato da altri: ricarica e riprova."
+            )
+        return affected
 
 
 def delete_record(engine: Engine, table: Table, pk_values: dict[str, Any]) -> int:
@@ -92,7 +128,12 @@ def _apply(conn: Connection, op: Operation) -> Any:
     if op.kind == "update":
         if op.pk_values is None or op.values is None:
             raise ValueError("update operation requires 'pk_values' and 'values'")
-        return _exec_update(conn, op.table, op.pk_values, op.values)
+        affected = _exec_update(conn, op.table, op.pk_values, op.values, op.expected)
+        if op.expected is not None and affected == 0:
+            raise ConflictError(
+                "Il record è stato modificato da altri: ricarica e riprova."
+            )
+        return affected
     if op.kind == "delete":
         if op.pk_values is None:
             raise ValueError("delete operation requires 'pk_values'")
