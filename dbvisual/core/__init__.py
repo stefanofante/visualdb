@@ -7,6 +7,7 @@ the query-spec compiler and generic CRUD helpers.
 from dbvisual.core.compiler import compile_select
 from dbvisual.core.connections import ConnectionConfig, build_engine, test_connection
 from dbvisual.core.crud import (
+    ConflictError,
     delete_record,
     insert_record,
     save_master_detail,
@@ -47,4 +48,5 @@ __all__ = [
     "update_record",
     "delete_record",
     "save_master_detail",
+    "ConflictError",
 ]
