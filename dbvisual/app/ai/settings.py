@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from platformdirs import user_data_dir
 
@@ -21,8 +22,10 @@ _APP_NAME = "dbvisual"
 
 
 def _settings_path(data_dir: str | Path | None = None) -> Path:
-    base = Path(data_dir) if data_dir is not None else Path(
-        user_data_dir(_APP_NAME, appauthor=False)
+    base = (
+        Path(data_dir)
+        if data_dir is not None
+        else Path(user_data_dir(_APP_NAME, appauthor=False))
     )
     base.mkdir(parents=True, exist_ok=True)
     return base / "settings.json"
@@ -63,9 +66,7 @@ def get_ai_config(data_dir: str | Path | None = None) -> AIConfig:
     )
 
 
-def set_ai_config(
-    config: AIConfig, data_dir: str | Path | None = None
-) -> None:
+def set_ai_config(config: AIConfig, data_dir: str | Path | None = None) -> None:
     """Persist the non-secret AI settings."""
     data = _load(data_dir)
     data["ai_enabled"] = config.enabled
@@ -87,3 +88,29 @@ def save_api_key(secrets: SecretStore, provider: str, api_key: str) -> None:
 def get_api_key(secrets: SecretStore, provider: str) -> str | None:
     """Return the stored API key for ``provider`` (or ``None``)."""
     return secrets.get_secret(api_key_secret_key(provider))
+
+
+def has_api_key(secrets: SecretStore, provider: str) -> bool:
+    """Return ``True`` if an API key is stored for ``provider`` (never the value)."""
+    return bool(get_api_key(secrets, provider))
+
+
+def delete_api_key(secrets: SecretStore, provider: str) -> None:
+    """Remove the stored API key for ``provider`` (no-op if absent)."""
+    secrets.delete_secret(api_key_secret_key(provider))
+
+
+def test_provider(
+    provider: str, api_key: str, model: str, http: Any = None
+) -> bool:
+    """Make a minimal provider call; return ``True`` on success (never logs the key)."""
+    from dbvisual.app.ai.provider import get_provider
+
+    try:
+        get_provider(provider, api_key, model, http=http).generate_sql(
+            "SELECT 1", {"t": ["a"]}
+        )
+        return True
+    except Exception:
+        return False
+
