@@ -8,13 +8,17 @@ later phase).
 
 from __future__ import annotations
 
+import importlib.util
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from sqlalchemy import Engine, create_engine, event, text
 from sqlalchemy.engine import URL
+from sqlalchemy.pool import StaticPool
 
-Dialect = Literal["postgresql", "mysql", "mssql", "oracle", "sqlite", "duckdb"]
+Dialect = Literal[
+    "postgresql", "mysql", "mssql", "oracle", "sqlite", "duckdb", "sqlcipher"
+]
 
 # Mapping of logical dialect -> SQLAlchemy ``dialect+driver`` string.
 _DRIVERS: dict[Dialect, str] = {
@@ -24,10 +28,11 @@ _DRIVERS: dict[Dialect, str] = {
     "oracle": "oracle+oracledb",
     "sqlite": "sqlite",
     "duckdb": "duckdb",  # provided by the duckdb_engine package
+    "sqlcipher": "sqlite+pysqlcipher",  # encrypted SQLite (SQLCipher)
 }
 
 # File-based / embedded dialects: ``database`` is a file path (or in-memory).
-_FILE_DIALECTS = {"sqlite", "duckdb"}
+_FILE_DIALECTS = {"sqlite", "duckdb", "sqlcipher"}
 
 # Dialects that understand ``SET <name> = <value>`` for session settings.
 _SET_DIALECTS = {"postgresql", "mysql", "mssql", "oracle"}
@@ -52,6 +57,9 @@ class ConnectionConfig:
     # Session settings applied via ``SET`` on every new connection (e.g. timezone,
     # search_path, statement_timeout, app.current_user_email for Postgres RLS).
     session_settings: dict[str, str] = field(default_factory=dict)
+    # Passphrase for an encrypted local file DB (SQLCipher / encrypted DuckDB).
+    # Assumed already decrypted by the caller; absent = no file encryption.
+    encryption_key: str | None = None
     # Extra kwargs forwarded to ``create_engine`` (pool sizing, echo, ...).
     engine_kwargs: dict[str, Any] = field(default_factory=dict)
 
@@ -92,19 +100,89 @@ def _session_statement(dialect: str, key: str, value: str) -> str | None:
     return f"SET {key} = '{safe}'"
 
 
+def encryption_supported(dialect: str) -> bool:
+    """Return ``True`` if the driver needed for encrypted files is installed.
+
+    * ``sqlcipher`` requires ``pysqlcipher3`` or ``sqlcipher3``.
+    * ``duckdb`` uses native encryption (via the ``duckdb_engine`` package).
+    """
+    if dialect == "sqlcipher":
+        return bool(
+            importlib.util.find_spec("pysqlcipher3")
+            or importlib.util.find_spec("sqlcipher3")
+        )
+    if dialect == "duckdb":
+        return bool(importlib.util.find_spec("duckdb_engine"))
+    return False
+
+
 def build_engine(config: ConnectionConfig) -> Engine:
     """Build a SQLAlchemy :class:`Engine` from resolved connection parameters.
 
     Pool pre-ping is enabled by default so stale connections are detected and
     recycled transparently. Callers may override any ``create_engine`` option
     through ``config.engine_kwargs``. When ``config.session_settings`` is given,
-    the corresponding ``SET`` statements run on every new connection.
+    the corresponding ``SET`` statements run on every new connection. When
+    ``config.encryption_key`` is set, the encrypted file (SQLCipher or DuckDB) is
+    opened with that passphrase.
     """
+    if config.dialect == "duckdb" and config.encryption_key:
+        return _build_encrypted_duckdb(config)
+
+    if config.dialect == "sqlcipher" and not encryption_supported("sqlcipher"):
+        raise RuntimeError(
+            "SQLite cifrato non disponibile: installa il driver SQLCipher "
+            "(pysqlcipher3 o sqlcipher3)."
+        )
+
     url = _build_url(config)
     kwargs: dict[str, Any] = {"pool_pre_ping": True}
     kwargs.update(config.engine_kwargs)
     engine = create_engine(url, **kwargs)
     _register_session_settings(engine, config)
+    _register_encryption_key(engine, config)
+    return engine
+
+
+def _register_encryption_key(engine: Engine, config: ConnectionConfig) -> None:
+    """For SQLCipher, apply ``PRAGMA key`` on every new connection."""
+    if config.dialect != "sqlcipher" or not config.encryption_key:
+        return
+    safe = config.encryption_key.replace("'", "''")
+
+    @event.listens_for(engine, "connect")
+    def _apply_key(dbapi_connection: Any, _record: Any) -> None:
+        cursor = dbapi_connection.cursor()
+        try:
+            cursor.execute(f"PRAGMA key = '{safe}'")
+        finally:
+            cursor.close()
+
+
+def _build_encrypted_duckdb(config: ConnectionConfig) -> Engine:
+    """Open an encrypted DuckDB file via ``ATTACH ... (ENCRYPTION_KEY ...)``.
+
+    A single-connection ``StaticPool`` is used so the encrypted file is attached
+    exactly once; the attached database is made the default catalog with ``USE``
+    so table names resolve unqualified.
+    """
+    path = (config.database or "").replace("\\", "/").replace("'", "''")
+    if not path or path == ":memory:":
+        raise ValueError("Un DuckDB cifrato richiede un percorso file.")
+    key = (config.encryption_key or "").replace("'", "''")
+    kwargs: dict[str, Any] = {"poolclass": StaticPool}
+    kwargs.update(config.engine_kwargs)
+    engine = create_engine("duckdb:///:memory:", **kwargs)
+
+    @event.listens_for(engine, "connect")
+    def _attach(dbapi_connection: Any, _record: Any) -> None:
+        cursor = dbapi_connection.cursor()
+        try:
+            cursor.execute(f"ATTACH '{path}' AS encdb (ENCRYPTION_KEY '{key}')")
+            cursor.execute("USE encdb")
+        finally:
+            cursor.close()
+
     return engine
 
 
