@@ -50,37 +50,51 @@ class SecretStore:
 
     def save_password(self, connection_id: int, password: str) -> None:
         """Persist ``password`` for ``connection_id``."""
-        if self._keyring_available():
-            import keyring
-
-            keyring.set_password(_KEYRING_SERVICE, str(connection_id), password)
-            return
-        vault = self._load_vault()
-        vault[str(connection_id)] = password
-        self._write_vault(vault)
+        self.set_secret(str(connection_id), password)
 
     def get_password(self, connection_id: int) -> str | None:
         """Return the stored password for ``connection_id`` or ``None``."""
-        if self._keyring_available():
-            import keyring
-
-            return keyring.get_password(_KEYRING_SERVICE, str(connection_id))
-        return self._load_vault().get(str(connection_id))
+        return self.get_secret(str(connection_id))
 
     def delete_password(self, connection_id: int) -> None:
         """Remove any stored password for ``connection_id`` (no-op if absent)."""
+        self.delete_secret(str(connection_id))
+
+    # -- generic secrets (passwords, webhook URLs, ...) ---------------------
+
+    def set_secret(self, key: str, value: str) -> None:
+        """Persist an arbitrary secret ``value`` under ``key``."""
+        if self._keyring_available():
+            import keyring
+
+            keyring.set_password(_KEYRING_SERVICE, key, value)
+            return
+        vault = self._load_vault()
+        vault[key] = value
+        self._write_vault(vault)
+
+    def get_secret(self, key: str) -> str | None:
+        """Return the secret stored under ``key`` or ``None``."""
+        if self._keyring_available():
+            import keyring
+
+            return keyring.get_password(_KEYRING_SERVICE, key)
+        return self._load_vault().get(key)
+
+    def delete_secret(self, key: str) -> None:
+        """Remove the secret under ``key`` (no-op if absent)."""
         if self._keyring_available():
             import keyring
             import keyring.errors
 
             try:
-                keyring.delete_password(_KEYRING_SERVICE, str(connection_id))
+                keyring.delete_password(_KEYRING_SERVICE, key)
             except keyring.errors.PasswordDeleteError:
                 pass
             return
         vault = self._load_vault()
-        if str(connection_id) in vault:
-            del vault[str(connection_id)]
+        if key in vault:
+            del vault[key]
             self._write_vault(vault)
 
     # -- keyring detection --------------------------------------------------
