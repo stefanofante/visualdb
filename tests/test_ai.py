@@ -76,9 +76,7 @@ def test_deepseek_uses_own_endpoint() -> None:
 
 
 def test_gemini_request_and_extract() -> None:
-    http = _Capture(
-        {"candidates": [{"content": {"parts": [{"text": "SELECT 4"}]}}]}
-    )
+    http = _Capture({"candidates": [{"content": {"parts": [{"text": "SELECT 4"}]}}]})
     p = GeminiProvider(api_key="KEY", model="gemini-x", http=http)
     sql = p.generate_sql("x", _SCHEMA)
     assert "gemini-x:generateContent?key=KEY" in http.url

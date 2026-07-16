@@ -13,8 +13,8 @@ from dbvisual.core.introspect import (
     reflect_schema,
 )
 from dbvisual.core.schema_ddl import (
-    DDLNotSupported,
     ColumnSpec,
+    DDLNotSupported,
     ForeignKeySpec,
     TableSpec,
     compose_add_column,
@@ -91,7 +91,9 @@ def test_create_add_drop_roundtrip_sqlite() -> None:
     )
     assert "t" in list_tables(reflect_schema(engine))
 
-    execute_ddl(engine, compose_add_column(engine.dialect, "t", ColumnSpec("qty", "integer")))
+    execute_ddl(
+        engine, compose_add_column(engine.dialect, "t", ColumnSpec("qty", "integer"))
+    )
     assert "qty" in {c.name for c in get_columns(reflect_schema(engine), "t")}
 
     execute_ddl(engine, compose_drop_column(engine.dialect, "t", "qty"))
@@ -125,7 +127,9 @@ def test_create_with_fk_detected_sqlite() -> None:
         ),
     )
     fks = detect_foreign_keys(reflect_schema(engine), "orders")
-    assert any(fk.remote_table == "customers" and fk.local_col == "customer_id" for fk in fks)
+    assert any(
+        fk.remote_table == "customers" and fk.local_col == "customer_id" for fk in fks
+    )
 
 
 # --- execution round-trip (DuckDB) -----------------------------------------
@@ -141,7 +145,9 @@ def test_create_add_roundtrip_duckdb() -> None:
         ),
     )
     assert "d" in list_tables(reflect_schema(engine))
-    execute_ddl(engine, compose_add_column(engine.dialect, "d", ColumnSpec("n", "integer")))
+    execute_ddl(
+        engine, compose_add_column(engine.dialect, "d", ColumnSpec("n", "integer"))
+    )
     assert "n" in {c.name for c in get_columns(reflect_schema(engine), "d")}
 
 

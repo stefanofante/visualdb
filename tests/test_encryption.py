@@ -106,7 +106,9 @@ def test_encrypted_duckdb_requires_path() -> None:
     not encryption_supported("sqlcipher"),
     reason="SQLCipher driver (pysqlcipher3/sqlcipher3) not installed",
 )
-def test_sqlcipher_roundtrip(tmp_path: Path) -> None:  # pragma: no cover - env dependent
+def test_sqlcipher_roundtrip(
+    tmp_path: Path,
+) -> None:  # pragma: no cover - env dependent
     db = str(tmp_path / "enc.sqlcipher")
     engine = build_engine(
         ConnectionConfig(dialect="sqlcipher", database=db, encryption_key="pw123")

@@ -62,7 +62,7 @@ class ColumnSpec:
     """A column definition for DDL composition."""
 
     name: str
-    type: str = "text"          # a key of _LOGICAL_TYPES
+    type: str = "text"  # a key of _LOGICAL_TYPES
     length: int | None = None
     nullable: bool = True
     primary_key: bool = False
@@ -120,9 +120,7 @@ def compose_create_table(dialect: Dialect, table: TableSpec) -> str:
         if c.name in fk_by_col:
             fk = fk_by_col[c.name]
             args.append(ForeignKey(f"{fk.ref_table}.{fk.ref_column}"))
-        cols.append(
-            Column(*args, primary_key=c.primary_key, nullable=c.nullable)
-        )
+        cols.append(Column(*args, primary_key=c.primary_key, nullable=c.nullable))
     tbl = Table(table.name, md, *cols)
     return str(CreateTable(tbl).compile(dialect=dialect)).strip()
 
