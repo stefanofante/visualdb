@@ -149,13 +149,16 @@ Layout moderno, pensato per l'uso quotidiano da parte di utenti non tecnici.
   parametri multi-valore e a cascata, filtri AND/OR annidati, summary/pivot chart e time-series con zoom; query custom SQL sola lettura (vedi §10).
 - **Fase 6 — Master-detail** *(FATTA, 88 test verdi)*: master (form) + detail (grid) legati dalla PK del master, commit
   atomico; copre one-to-many e many-to-many (vedi §10).
-- **Fase 7 — Automation / Webhooks**: su create/update/delete invia un webhook HTTP POST (JSON)
+- **Fase 7 — Automation / Webhooks** *(FATTA, 96 test verdi)*: su create/update/delete invia un webhook HTTP POST (JSON)
   a URL configurati (Zapier/Slack/Discord/endpoint proprio); dispatch opzionale dal core, invio
   non bloccante; config per sheet/form nel metadata store; placeholder `{{campo}}` / `:formatted`
   / `:bare`; URL trattati come segreti (vedi §10).
-- **Fase 8 — Row-Level Security (PostgreSQL)** *(predisposta, non implementata)*: RLS delegata a
+- **Fase 8 — Row-Level Security (PostgreSQL)** *(FATTA, 103 test verdi)*: RLS delegata a
   Postgres (policy SQL dell'utente); dbvisual passa l'identità via `SET app.current_user_email`;
-  predisposizione additiva `session_settings` su `core/connections.py` (vedi §10).
+  identità locale, flag RLS su form/sheet (solo Postgres) via `session_settings` (vedi §10).
+- **Fase 9 — Gestione schema / Database tab (DDL)** *(pianificata)*: operazioni di **scrittura**
+  sullo schema (create/drop tabelle, add/remove colonne, FK, diagramma, import/export CSV, DDL
+  generato da AI) con revisione ed esecuzione **manuale**, mai automatica (vedi §10).
 
 ## 9. Requisiti non funzionali
 
@@ -330,7 +333,7 @@ Layout moderno, pensato per l'uso quotidiano da parte di utenti non tecnici.
 - Gli URL webhook possono contenere token: trattarli come **segreti** (non loggarli in chiaro,
   valutare storage cifrato come per le password).
 
-### Fase 8 — Row-Level Security (PostgreSQL) [predisposta, non implementata]
+### Fase 8 — Row-Level Security (PostgreSQL)
 
 **Modello**
 - La RLS **non è implementata dall'applicazione**: è **delegata a PostgreSQL**. L'utente crea le
@@ -344,19 +347,59 @@ Layout moderno, pensato per l'uso quotidiano da parte di utenti non tecnici.
 - dbvisual, a ogni sessione/connessione, esegue `SET app.current_user_email = <email>`.
 
 **Prerequisiti**
-- **Identità utente**: oggi l'app è locale **single-user, senza login**. La RLS richiede
-  un'identità (email) da passare al DB. Decisione **rimandata**: eventuale login locale in cui
-  l'utente dichiara la propria email. Finché non c'è identità, la RLS resta **inattiva**.
+- **Identità utente**: l'app è locale **single-user, senza login**. La RLS richiede un'identità
+  (email) da passare al DB, dichiarata dall'utente e persistita in locale (`app/identity.py`,
+  via `platformdirs`). Finché non c'è identità, la RLS resta **inattiva** (nessun `SET`).
 - **Connessione**: deve usare un ruolo Postgres **NON superuser** e **NON owner** della tabella
-  (superuser/owner **bypassano** la RLS). Requisito di sicurezza.
+  (superuser/owner **bypassano** la RLS). Requisito di sicurezza, segnalato in UI.
 
-**Predisposizione additiva (da fare ora, non rompe API/test esistenti)**
+**Implementazione (additiva, non rompe API/test esistenti)**
 - `core/connections.py`: parametro **opzionale** `session_settings` (mappa chiave→valore) che, a
-  ogni apertura di connessione, esegue i corrispondenti `SET` (utile in generale: `timezone`,
-  `search_path`, `statement_timeout`, e in futuro `app.current_user_email`). Default: nessuno.
-- Livello applicativo: concetto astratto e **opzionale** di **"identità corrente"** (per ora
-  sempre vuota = single-user); se valorizzata, verrebbe passata come session-setting
-  `app.current_user_email` sulle connessioni Postgres.
+  ogni apertura di connessione, esegue i corrispondenti `SET` (`timezone`, `search_path`,
+  `statement_timeout`, e `app.current_user_email`). Default: nessuno; no-op sui dialetti non-SET.
+- `app/identity.py`: **identità corrente** (email) persistita localmente, impostabile dalla UI
+  (pagina Connessioni). Vuota = RLS inattiva.
+- `app/rls.py`: `rls_session_settings(connection, rls_enabled, identity)` restituisce
+  `{app.current_user_email: <email>}` **solo** se il flag è attivo, la connessione è Postgres e
+  l'identità è presente; altrimenti `{}` (flag ignorato su altri dialetti).
+- Flag **RLS** per definition (`SheetSpec.rls` / `FormSpec.rls`, default `False`): checkbox nel
+  design panel, visibile solo per connessioni Postgres. All'apertura, l'engine viene costruito
+  con le `session_settings` RLS.
 
 **Non in questa fase**: schermata di login, gestione utenti, checkbox RLS su form/sheet,
 enforcement lato app.
+
+### Assistente AI (NL → SQL) — solo Report
+
+> Feature **opzionale, disattivata di default**. Provider LLM a scelta (Claude / OpenAI / Gemini /
+> DeepSeek) via **API key dell'utente** (trattata come segreto in `meta/secrets`, mai in chiaro).
+
+- **Scope attuale**: l'assistente genera **SQL di SOLA LETTURA (SELECT)** per i **Report**, a
+  partire da una descrizione in linguaggio naturale + lo schema riflesso (nomi tabelle/colonne).
+- L'SQL generato è **sempre mostrato all'utente per revisione** prima dell'esecuzione e passa da
+  `ensure_readonly` (Fase 5): **nessuna esecuzione automatica** di statement di scrittura.
+- **NON genera DDL** né modifica lo schema in questa fase (per la gestione schema vedi Fase 9).
+- **Trasparenza / privacy** (obbligatoria in UI): attivando l'AI, la struttura del DB (nomi
+  tabelle/colonne) e il testo della richiesta vengono inviati al **provider cloud** scelto, con
+  costo per token a carico dell'utente. Off di default; attivazione esplicita.
+- **Integrazione**: pulsante "Genera con AI" **solo** nel query builder dei **Report** (dove sono
+  ammesse le query custom), non nei builder di form/sheet (che restano query builder strutturati).
+
+### Fase 9 — Gestione schema / Database tab (DDL) [pianificata, non implementata]
+
+- **Scopo**: creare e gestire lo schema del DB senza strumenti esterni (come il "Database tab" di
+  Visual DB). Finora dbvisual fa solo **introspezione in lettura**; questa fase introduce le
+  operazioni di **scrittura sullo schema**.
+- **Funzioni**: creare/eliminare tabelle, aggiungere/rimuovere colonne, definire relazioni (FK),
+  visualizzare i dati di una tabella, diagramma delle relazioni, import/export CSV.
+- **Assistente AI per lo schema** (riusa il provider LLM): genera **DDL** da una descrizione in
+  linguaggio naturale (es. "tabella per tracciare la formazione dei dipendenti con date di
+  completamento e stato certificazione") → `CREATE TABLE` con colonne, tipi e relazioni.
+- **Sicurezza (obbligatoria)**: il DDL generato/composto **non viene mai eseguito
+  automaticamente**; è sempre **mostrato per revisione** e richiede **conferma esplicita**.
+  Operazioni distruttive (`DROP`, `ALTER` con perdita dati) con **doppia conferma** e avviso. Il
+  DDL è un percorso **separato** dalle query di sola lettura: **non** passa da `ensure_readonly`
+  (che resta per le SELECT).
+- **Dialetto**: il DDL dipende dal dialetto (Postgres / MySQL / SQL Server / Oracle / SQLite /
+  DuckDB): usare SQLAlchemy dove possibile o generazione per-dialetto; documentare i limiti.
+- **Prerequisito permessi**: l'utente di connessione deve avere i privilegi **DDL** sul database.

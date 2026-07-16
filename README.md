@@ -340,6 +340,53 @@ Master + tutti i detail vengono salvati in **una sola transazione**.
 
 ---
 
+## Fase 7 — Automation / Webhooks
+
+Quando un record viene **creato / aggiornato / eliminato** in uno sheet o form, dbvisual può
+inviare un **webhook HTTP POST (JSON)** a un URL configurato (Zapier, Slack, Discord, endpoint
+proprio). I POST partono in **uscita** dalla macchina locale; nessun server in ingresso.
+
+| Modulo | Responsabilità |
+| --- | --- |
+| `dbvisual/core/events.py` | Dispatch **opzionale** di eventi CRUD. Senza dispatcher registrato il core è invariato. |
+| `dbvisual/app/webhooks.py` | Servizio: trova i webhook della tabella, rende il body e fa il POST (non bloccante, con retry opzionale). |
+| `dbvisual/meta` | Tabella `webhooks` (config) + URL salvato come **segreto** in `SecretStore` (mai in chiaro nel DB). |
+
+- **Configurazione** (dal pannello Webhook di sheet/form): nome, URL, eventi
+  (`created`/`updated`/`deleted`), `body_mode` (default/custom) e template, con bottone **Testa**.
+- **Body di default**: include automaticamente tutti i campi del record (si adatta se cambiano).
+- **Body custom** con placeholder handlebars, tre *flavor*:
+  - `{{campo}}` → valore **JSON valido** (numero/booleano/stringa quotata, `null`);
+  - `{{campo:formatted}}` → stringa **sempre tra virgolette** (fallback a raw);
+  - `{{campo:bare}}` → **testo puro senza virgolette** (per inserimento dentro stringhe).
+  Esempi validi: Slack `{"text": "... {{customer_name:bare}} ..."}`, Discord
+  `{"content": "... {{product:bare}} ..."}`.
+- **Resilienza**: un webhook che fallisce **non** fa fallire il salvataggio (errore loggato, mai
+  l'URL in chiaro); invio in background.
+
+---
+
+## Fase 8 — Row-Level Security (PostgreSQL)
+
+La RLS **non è implementata dall'app**: è **delegata a PostgreSQL** (l'utente crea le policy con
+`CREATE POLICY ... USING/WITH CHECK` e abilita la RLS sulla tabella). dbvisual si limita a
+**passare l'identità** dell'utente corrente al DB.
+
+- **Identità locale** (`app/identity.py`): una singola **email** dichiarata dall'utente e
+  persistita in locale (impostabile dalla pagina **Connessioni**). Vuota = RLS **inattiva**.
+- **Flag RLS per definition**: checkbox nel design panel di sheet/form, **visibile solo se la
+  connessione è Postgres**; salvato in `SheetSpec.rls` / `FormSpec.rls`.
+- **Wiring**: quando una definition ha RLS attiva su Postgres e l'identità è impostata, l'engine
+  esegue `SET app.current_user_email = <email>` a ogni connessione (via `session_settings`); le
+  policy Postgres usano `current_setting('app.current_user_email')`. Su dialetti non-Postgres il
+  flag è **ignorato**.
+- **Sicurezza (setup Postgres)**: la connessione deve usare un ruolo **NON superuser** e **NON
+  owner** della tabella, altrimenti la RLS viene **bypassata**. L'avviso è mostrato in UI.
+- Il filtraggio effettivo delle righe è responsabilità delle **policy Postgres** e non è
+  unit-testabile senza un Postgres reale.
+
+---
+
 ## Esecuzione dei test
 
 I test del core usano **SQLite in-memory**, quindi non richiedono alcun database esterno
@@ -349,7 +396,7 @@ né credenziali.
 pytest
 ```
 
-Output atteso: tutti i test **verdi** (88 test).
+Output atteso: tutti i test **verdi** (103 test).
 
 I test coprono:
 
@@ -380,6 +427,12 @@ I test coprono:
   atomico** one-to-many (errore su un detail → rollback del master), **PK del master nuovo
   propagata** alle FK dei detail, many-to-many via giunzione (related non scritta), e
   **optimistic locking** con rollback totale;
+- Webhooks: dispatch eventi CRUD (no-op senza dispatcher; created/updated/deleted col dispatcher),
+  CRUD config con **URL come segreto** (non nel DB), rendering dei tre *flavor* del body
+  (`{{x}}`/`:formatted`/`:bare`) e template Slack/Discord JSON-validi, invio col body/eventi
+  giusti, filtro eventi e **webhook che fallisce senza propagare eccezioni**;
+- RLS: persistenza dell'identità locale, `session_settings` per `app.current_user_email` solo su
+  Postgres con identità (ignorato altrove), flag `rls` su Sheet/Form con round-trip;
 - smoke test dell'app NiceGUI: registrazione delle route e bootstrap dello stato.
 
 ---
@@ -429,5 +482,9 @@ with engine.connect() as conn:
   grafici summary/pivot e time-series (`ui.echart`), query custom SQL read-only, export CSV.
 - **Fase 6 — Master-detail** ✅ master (form) + detail (grid) legati dalla PK, salvataggio
   **atomico** one-to-many e many-to-many con propagazione PK e optimistic locking.
+- **Fase 7 — Automation / Webhooks** ✅ dispatch eventi CRUD dal core, webhook HTTP POST non
+  bloccanti, body default/custom (flavor `{{x}}`/`:formatted`/`:bare`), URL come segreto.
+- **Fase 8 — Row-Level Security (PostgreSQL)** ✅ identità locale + flag RLS su form/sheet
+  (solo Postgres) via `app.current_user_email`; policy delegate a Postgres.
 
 Dettagli architetturali completi in [docs/spec.md](docs/spec.md).
