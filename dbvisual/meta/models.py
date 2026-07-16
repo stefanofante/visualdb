@@ -65,3 +65,25 @@ definitions = Table(
     SAColumn("queryspec_json", Text, nullable=False),
     UniqueConstraint("app_id", "name", name="uq_definition_app_name"),
 )
+
+webhooks = Table(
+    "webhooks",
+    metadata,
+    SAColumn("id", Integer, primary_key=True, autoincrement=True),
+    SAColumn(
+        "definition_id",
+        Integer,
+        ForeignKey("definitions.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    # Denormalized target table (matched against emitted CRUD events).
+    SAColumn("table_name", String(200), nullable=False),
+    SAColumn("name", String(200), nullable=False),
+    # JSON list among "created" / "updated" / "deleted".
+    SAColumn("events", Text, nullable=False),
+    # "default" (auto body with all fields) or "custom" (body_template).
+    SAColumn("body_mode", String(20), nullable=False, default="default"),
+    SAColumn("body_template", Text, nullable=True),
+    # NOTE: the URL is a secret and is NOT stored here; it lives in SecretStore
+    # under the key ``webhook:<id>`` (may contain tokens).
+)

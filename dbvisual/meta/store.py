@@ -14,7 +14,13 @@ from typing import Any
 from platformdirs import user_data_dir
 from sqlalchemy import Engine, create_engine, delete, insert, select, update
 
-from dbvisual.meta.models import applications, connections, definitions, metadata
+from dbvisual.meta.models import (
+    applications,
+    connections,
+    definitions,
+    metadata,
+    webhooks,
+)
 
 _APP_NAME = "dbvisual"
 
@@ -206,9 +212,71 @@ class MetadataStore:
     def delete_definition(self, definition_id: int) -> int:
         """Delete a definition by id; return the affected row count."""
         with self.engine.begin() as conn:
+            conn.execute(
+                delete(webhooks).where(webhooks.c.definition_id == definition_id)
+            )
             result = conn.execute(
                 delete(definitions).where(definitions.c.id == definition_id)
             )
+            return result.rowcount
+
+    # -- webhooks -----------------------------------------------------------
+
+    def create_webhook(
+        self,
+        definition_id: int,
+        table_name: str,
+        name: str,
+        events: list[str],
+        body_mode: str = "default",
+        body_template: str | None = None,
+    ) -> int:
+        """Insert a webhook config (URL is stored separately as a secret)."""
+        with self.engine.begin() as conn:
+            result = conn.execute(
+                insert(webhooks).values(
+                    definition_id=definition_id,
+                    table_name=table_name,
+                    name=name,
+                    events=json.dumps(events),
+                    body_mode=body_mode,
+                    body_template=body_template,
+                )
+            )
+            return int(result.inserted_primary_key[0])
+
+    def list_webhooks(self, definition_id: int | None = None) -> list[dict[str, Any]]:
+        """Return webhook configs, optionally filtered by ``definition_id``."""
+        stmt = select(webhooks)
+        if definition_id is not None:
+            stmt = stmt.where(webhooks.c.definition_id == definition_id)
+        with self.engine.connect() as conn:
+            return [self._decode_webhook(r) for r in conn.execute(stmt).mappings()]
+
+    def get_webhook(self, webhook_id: int) -> dict[str, Any] | None:
+        """Return a single webhook config by id, or ``None``."""
+        with self.engine.connect() as conn:
+            row = (
+                conn.execute(select(webhooks).where(webhooks.c.id == webhook_id))
+                .mappings()
+                .first()
+            )
+            return self._decode_webhook(row) if row else None
+
+    def update_webhook(self, webhook_id: int, **values: Any) -> int:
+        """Update webhook fields; ``events`` (list) is JSON-encoded automatically."""
+        if "events" in values and isinstance(values["events"], list):
+            values["events"] = json.dumps(values["events"])
+        with self.engine.begin() as conn:
+            result = conn.execute(
+                update(webhooks).where(webhooks.c.id == webhook_id).values(**values)
+            )
+            return result.rowcount
+
+    def delete_webhook(self, webhook_id: int) -> int:
+        """Delete a webhook config by id; return the affected row count."""
+        with self.engine.begin() as conn:
+            result = conn.execute(delete(webhooks).where(webhooks.c.id == webhook_id))
             return result.rowcount
 
     # -- helpers ------------------------------------------------------------
@@ -219,4 +287,12 @@ class MetadataStore:
         data = dict(row)
         raw = data.get("options")
         data["options"] = json.loads(raw) if raw else {}
+        return data
+
+    @staticmethod
+    def _decode_webhook(row: Any) -> dict[str, Any]:
+        """Convert a webhook row mapping into a dict with parsed ``events``."""
+        data = dict(row)
+        raw = data.get("events")
+        data["events"] = json.loads(raw) if raw else []
         return data

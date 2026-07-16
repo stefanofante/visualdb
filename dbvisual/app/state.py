@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from dbvisual.core.events import clear_dispatchers, register_dispatcher
 from dbvisual.meta.secrets import SecretStore
 from dbvisual.meta.store import MetadataStore
 
@@ -31,12 +32,21 @@ def init_state(
     use_keyring: bool = True,
     data_dir: str | Path | None = None,
 ) -> AppState:
-    """Create and register the global :class:`AppState`."""
+    """Create and register the global :class:`AppState`.
+
+    Also registers the webhook dispatcher so successful CRUD operations trigger
+    any configured webhooks (Phase 7).
+    """
     global _state
-    _state = AppState(
-        store=MetadataStore(db_path),
-        secrets=SecretStore(use_keyring=use_keyring, data_dir=data_dir),
-    )
+    store = MetadataStore(db_path)
+    secrets = SecretStore(use_keyring=use_keyring, data_dir=data_dir)
+    _state = AppState(store=store, secrets=secrets)
+
+    # (Re)register the webhook dispatcher against the fresh store/secrets.
+    from dbvisual.app.webhooks import WebhookService
+
+    clear_dispatchers()
+    register_dispatcher(WebhookService(store, secrets).handle_event)
     return _state
 
 
