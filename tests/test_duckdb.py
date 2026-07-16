@@ -87,7 +87,5 @@ def test_duckdb_basic_crud(tmp_path: Path) -> None:
     delete_record(engine, items, {"id": 3})
     # DuckDB does not always report DELETE rowcount, so verify by querying.
     with engine.connect() as conn:
-        remaining = conn.execute(
-            select(items.c.id).where(items.c.id == 3)
-        ).all()
+        remaining = conn.execute(select(items.c.id).where(items.c.id == 3)).all()
     assert remaining == []
