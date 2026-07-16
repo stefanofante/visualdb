@@ -14,7 +14,7 @@ from typing import Any, Literal
 from sqlalchemy import Engine, create_engine, event, text
 from sqlalchemy.engine import URL
 
-Dialect = Literal["postgresql", "mysql", "mssql", "oracle", "sqlite"]
+Dialect = Literal["postgresql", "mysql", "mssql", "oracle", "sqlite", "duckdb"]
 
 # Mapping of logical dialect -> SQLAlchemy ``dialect+driver`` string.
 _DRIVERS: dict[Dialect, str] = {
@@ -23,7 +23,11 @@ _DRIVERS: dict[Dialect, str] = {
     "mssql": "mssql+pyodbc",
     "oracle": "oracle+oracledb",
     "sqlite": "sqlite",
+    "duckdb": "duckdb",  # provided by the duckdb_engine package
 }
+
+# File-based / embedded dialects: ``database`` is a file path (or in-memory).
+_FILE_DIALECTS = {"sqlite", "duckdb"}
 
 # Dialects that understand ``SET <name> = <value>`` for session settings.
 _SET_DIALECTS = {"postgresql", "mysql", "mssql", "oracle"}
@@ -59,8 +63,8 @@ def _build_url(config: ConnectionConfig) -> URL:
 
     drivername = _DRIVERS[config.dialect]
 
-    if config.dialect == "sqlite":
-        # SQLite has no host/user; ``database`` is the file path (empty => in-memory).
+    if config.dialect in _FILE_DIALECTS:
+        # No host/user; ``database`` is the file path (empty => in-memory).
         database = config.database or ":memory:"
         return URL.create(drivername=drivername, database=database)
 

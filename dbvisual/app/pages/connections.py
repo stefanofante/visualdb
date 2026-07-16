@@ -28,6 +28,7 @@ _DIALECTS = {
     "SQL Server": "mssql",
     "Oracle": "oracle",
     "SQLite": "sqlite",
+    "DuckDB": "duckdb",
 }
 
 

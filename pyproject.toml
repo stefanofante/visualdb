@@ -27,15 +27,17 @@ postgresql = ["psycopg[binary]>=3.1"]
 mysql = ["pymysql>=1.1"]
 mssql = ["pyodbc>=5.0"]
 oracle = ["oracledb>=2.0"]
+duckdb = ["duckdb-engine>=0.13"]
 # Convenience group that pulls in every supported driver.
 all-drivers = [
     "psycopg[binary]>=3.1",
     "pymysql>=1.1",
     "pyodbc>=5.0",
     "oracledb>=2.0",
+    "duckdb-engine>=0.13",
 ]
 # Development / testing.
-dev = ["pytest>=7.4"]
+dev = ["pytest>=7.4", "duckdb-engine>=0.13"]
 
 [project.scripts]
 dbvisual = "dbvisual.app.cli:main"
