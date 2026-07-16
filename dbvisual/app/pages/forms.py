@@ -13,6 +13,7 @@ from typing import Any
 from nicegui import ui
 
 from dbvisual.app.components.form_field import FormField
+from dbvisual.app.components.webhooks_ui import open_webhooks_dialog
 from dbvisual.app.form_service import (
     ConflictError,
     FieldConfig,
@@ -28,7 +29,9 @@ from dbvisual.app.form_service import (
     resolve_engine,
     save_record,
 )
+from dbvisual.app.identity import get_identity
 from dbvisual.app.query_builder import build_queryspec
+from dbvisual.app.rls import rls_available, rls_session_settings
 from dbvisual.app.shell import frame
 from dbvisual.app.state import get_state
 from dbvisual.core.introspect import detect_foreign_keys, get_columns, list_tables
@@ -61,9 +64,23 @@ def _create_dialog(on_saved) -> None:
         conn_select = ui.select(
             {c["id"]: c["name"] for c in conns}, label="Connessione"
         ).classes("w-full")
+        rls_box = ui.checkbox("Row-level security (solo PostgreSQL)")
+        rls_box.set_visibility(False)
         schema_box = ui.column().classes("w-full gap-3")
         result = ui.label("").classes("text-sm")
         ctx: dict[str, Any] = {"metadata": None}
+
+        def _on_conn_change() -> None:
+            conn = (
+                state.store.get_connection(int(conn_select.value))
+                if conn_select.value is not None
+                else None
+            )
+            is_pg = bool(conn and rls_available(conn))
+            rls_box.set_visibility(is_pg)
+            if not is_pg:
+                rls_box.value = False
+            load_schema()
 
         def load_schema() -> None:
             schema_box.clear()
@@ -109,7 +126,7 @@ def _create_dialog(on_saved) -> None:
 
                 main_select.on_value_change(lambda _e: on_main_change())
 
-        conn_select.on_value_change(lambda _e: load_schema())
+        conn_select.on_value_change(lambda _e: _on_conn_change())
 
         def save() -> None:
             metadata = ctx.get("metadata")
@@ -133,6 +150,7 @@ def _create_dialog(on_saved) -> None:
                 connection_id=int(conn_select.value),
                 spec=spec,
                 fields=_auto_fields(spec.columns, main.value),
+                rls=bool(rls_box.value),
             )
             state.store.create_definition(
                 app_id=app_id,
@@ -215,8 +233,16 @@ def form_editor(definition_id: int) -> None:
             return
 
         password = state.secrets.get_password(conn["id"])
+        session_settings = rls_session_settings(conn, form_spec.rls, get_identity())
+        if form_spec.rls and rls_available(conn) and not get_identity():
+            ui.notify(
+                "RLS attiva ma nessuna identità impostata: le policy non filtreranno nulla.",
+                type="warning",
+            )
         try:
-            engine, metadata = resolve_engine(conn, password)
+            engine, metadata = resolve_engine(
+                conn, password, session_settings=session_settings
+            )
             view = build_view(form_spec.spec, metadata)
             _f, records = load_rows(engine, metadata, form_spec.spec)
         except Exception as exc:
@@ -346,6 +372,13 @@ def form_editor(definition_id: int) -> None:
             ui.button("Elimina", icon="delete", on_click=delete).props(
                 "flat color=negative"
             )
+            ui.button(
+                "Webhook",
+                icon="webhook",
+                on_click=lambda: open_webhooks_dialog(
+                    definition["id"], form_spec.spec.main_table
+                ),
+            ).props("flat")
             ui.button(
                 "Indietro", icon="arrow_back", on_click=lambda: ui.navigate.to("/forms")
             ).props("flat")

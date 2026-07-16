@@ -102,6 +102,7 @@ class FormSpec(BaseModel):
     fields: list[FieldConfig] = Field(default_factory=list)
     submit_rules: list[SubmitRule] = Field(default_factory=list)
     form_rules: list[FormRule] = Field(default_factory=list)
+    rls: bool = False  # Postgres row-level security (Phase 8); ignored otherwise.
 
     def to_json(self) -> str:
         return self.model_dump_json()

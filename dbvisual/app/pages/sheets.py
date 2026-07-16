@@ -13,7 +13,10 @@ from typing import Any
 from nicegui import ui
 
 from dbvisual.app.components.grid import SheetGrid
+from dbvisual.app.components.webhooks_ui import open_webhooks_dialog
+from dbvisual.app.identity import get_identity
 from dbvisual.app.query_builder import build_queryspec
+from dbvisual.app.rls import rls_available, rls_session_settings
 from dbvisual.app.sheet_service import (
     ConflictError,
     SheetSpec,
@@ -31,6 +34,7 @@ from dbvisual.core.introspect import (
     get_columns,
     list_tables,
 )
+from dbvisual.core.queryspec import QuerySpec
 
 
 def _build_queryspec(
@@ -63,6 +67,27 @@ def _create_dialog(on_saved) -> None:
         conn_select = ui.select(
             {c["id"]: c["name"] for c in conns}, label="Connessione"
         ).classes("w-full")
+
+        rls_box = ui.checkbox("Row-level security (solo PostgreSQL)").classes("w-full")
+        rls_note = ui.label(
+            "La connessione deve usare un ruolo Postgres NON superuser e NON owner "
+            "della tabella, altrimenti la RLS viene bypassata."
+        ).classes("text-xs text-amber-700")
+        rls_box.set_visibility(False)
+        rls_note.set_visibility(False)
+
+        def _on_conn_change() -> None:
+            conn = (
+                state.store.get_connection(int(conn_select.value))
+                if conn_select.value is not None
+                else None
+            )
+            is_pg = bool(conn and rls_available(conn))
+            rls_box.set_visibility(is_pg)
+            rls_note.set_visibility(is_pg)
+            if not is_pg:
+                rls_box.value = False
+            load_schema()
 
         schema_box = ui.column().classes("w-full gap-3")
         result = ui.label("").classes("text-sm")
@@ -118,7 +143,7 @@ def _create_dialog(on_saved) -> None:
 
                 main_select.on_value_change(lambda _e: on_main_change())
 
-        conn_select.on_value_change(lambda _e: load_schema())
+        conn_select.on_value_change(lambda _e: _on_conn_change())
 
         def save() -> None:
             metadata = ctx.get("metadata")
@@ -144,7 +169,9 @@ def _create_dialog(on_saved) -> None:
                 list(ctx["cols"].value or []),
                 list(ctx["rel"].value or []),
             )
-            sheet_spec = SheetSpec(connection_id=int(conn_select.value), spec=spec)
+            sheet_spec = SheetSpec(
+                connection_id=int(conn_select.value), spec=spec, rls=bool(rls_box.value)
+            )
             state.store.create_definition(
                 app_id=app_id,
                 kind="sheet",
@@ -249,8 +276,16 @@ def sheet_editor(definition_id: int) -> None:
             return
 
         password = state.secrets.get_password(conn["id"])
+        session_settings = rls_session_settings(conn, sheet_spec.rls, get_identity())
+        if sheet_spec.rls and rls_available(conn) and not get_identity():
+            ui.notify(
+                "RLS attiva ma nessuna identità impostata: le policy non filtreranno nulla.",
+                type="warning",
+            )
         try:
-            engine, metadata = resolve_engine(conn, password)
+            engine, metadata = resolve_engine(
+                conn, password, session_settings=session_settings
+            )
             view = build_view(sheet_spec.spec, metadata)
             _fields, rows = load_rows(engine, metadata, sheet_spec.spec)
         except Exception as exc:
@@ -261,6 +296,13 @@ def sheet_editor(definition_id: int) -> None:
             ui.label(definition["name"]).classes("text-2xl font-bold")
             with ui.row().classes("gap-2"):
                 save_btn = ui.button("Salva", icon="save").props("color=primary")
+                ui.button(
+                    "Webhook",
+                    icon="webhook",
+                    on_click=lambda: open_webhooks_dialog(
+                        definition["id"], sheet_spec.spec.main_table
+                    ),
+                ).props("flat")
                 ui.button(
                     "Indietro",
                     icon="arrow_back",

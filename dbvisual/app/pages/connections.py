@@ -10,6 +10,7 @@ from typing import Any
 
 from nicegui import ui
 
+from dbvisual.app.identity import get_identity, set_identity
 from dbvisual.app.shell import frame
 from dbvisual.app.state import get_state
 from dbvisual.core.connections import ConnectionConfig, build_engine, test_connection
@@ -208,6 +209,27 @@ def connections_page() -> None:
                 icon="add",
                 on_click=lambda: _connection_dialog(refresh),
             ).props("color=primary")
+
+        # Local identity (Phase 8): email passed to Postgres RLS as
+        # app.current_user_email. Empty = RLS inactive.
+        with ui.card().classes("w-full"):
+            with ui.row().classes("w-full items-center gap-2"):
+                ui.icon("badge")
+                email = ui.input(
+                    "Identità corrente (email per RLS PostgreSQL)",
+                    value=get_identity(),
+                ).classes("grow")
+
+                def _save_identity() -> None:
+                    set_identity(email.value or "")
+                    ui.notify("Identità aggiornata.", type="positive")
+
+                ui.button("Salva identità", on_click=_save_identity).props("outline")
+            ui.label(
+                "La RLS è delegata a PostgreSQL (policy SQL dell'utente). La connessione "
+                "deve usare un ruolo NON superuser e NON owner della tabella, altrimenti "
+                "la RLS viene bypassata."
+            ).classes("text-xs text-amber-700")
 
         container = ui.column().classes("w-full gap-2")
 

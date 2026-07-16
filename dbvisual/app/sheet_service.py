@@ -43,6 +43,7 @@ class SheetSpec(BaseModel):
 
     connection_id: int
     spec: QuerySpec
+    rls: bool = False  # Postgres row-level security (Phase 8); ignored otherwise.
 
     def to_json(self) -> str:
         """Serialize to the JSON string stored in ``definitions.queryspec_json``."""
@@ -85,7 +86,9 @@ class SheetView:
 
 
 def config_from_connection(
-    connection: dict[str, Any], password: str | None
+    connection: dict[str, Any],
+    password: str | None,
+    session_settings: dict[str, str] | None = None,
 ) -> ConnectionConfig:
     """Build a :class:`ConnectionConfig` from a stored connection row + password."""
     return ConnectionConfig(
@@ -96,11 +99,14 @@ def config_from_connection(
         username=connection.get("username"),
         password=password,
         query=connection.get("options") or {},
+        session_settings=session_settings or {},
     )
 
 
-# Cache of (engine, reflected metadata) keyed by connection id.
-_engine_cache: dict[int, tuple[Engine, MetaData]] = {}
+# Cache of (engine, reflected metadata) keyed by (connection id, session settings).
+_engine_cache: dict[
+    tuple[int, tuple[tuple[str, str], ...]], tuple[Engine, MetaData]
+] = {}
 
 
 def resolve_engine(
@@ -108,14 +114,21 @@ def resolve_engine(
     password: str | None,
     *,
     refresh: bool = False,
+    session_settings: dict[str, str] | None = None,
 ) -> tuple[Engine, MetaData]:
-    """Return a cached ``(engine, metadata)`` for ``connection`` (reflecting once)."""
-    cid = int(connection["id"])
-    if not refresh and cid in _engine_cache:
-        return _engine_cache[cid]
-    engine = build_engine(config_from_connection(connection, password))
+    """Return a cached ``(engine, metadata)`` for ``connection`` (reflecting once).
+
+    ``session_settings`` (e.g. ``app.current_user_email`` for Postgres RLS) are
+    applied on each connection and are part of the cache key.
+    """
+    key = (int(connection["id"]), tuple(sorted((session_settings or {}).items())))
+    if not refresh and key in _engine_cache:
+        return _engine_cache[key]
+    engine = build_engine(
+        config_from_connection(connection, password, session_settings)
+    )
     metadata = reflect_schema(engine)
-    _engine_cache[cid] = (engine, metadata)
+    _engine_cache[key] = (engine, metadata)
     return engine, metadata
 
 
