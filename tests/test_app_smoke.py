@@ -17,7 +17,7 @@ from dbvisual.app import state as app_state
 
 def test_pages_are_registered() -> None:
     routes = set(Client.page_routes.values())
-    assert {"/", "/connections", "/applications"} <= routes
+    assert {"/", "/connections", "/applications", "/about"} <= routes
 
 
 def test_bootstrap_uses_temp_store(tmp_path: Path) -> None:

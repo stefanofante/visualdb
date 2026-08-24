@@ -17,6 +17,7 @@ _NAV: list[tuple[str, str, str]] = [
     ("Master-Detail", "account_tree", "/master-detail"),
     ("Applications", "apps", "/applications"),
     ("Settings", "settings", "/settings"),
+    ("About", "info", "/about"),
 ]
 
 
