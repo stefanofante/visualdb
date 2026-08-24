@@ -1,95 +1,94 @@
-# DB Visual Builder — Specifiche
+# DB Visual Builder - Specification
 
-Applicazione **locale** in Python per costruire *form di data-entry, sheet (griglie) e report*
-su database esistenti, in stile Visual DB, ma **self-contained**: si installa e gira sulla
-macchina dell'utente. Nessun cloud, nessun account remoto, nessun multi-tenant.
+A **local** Python application to build *data-entry forms, sheets (grids) and reports*
+over existing databases, in the spirit of Visual DB, but **self-contained**: it installs and
+runs on the user's machine. No cloud, no remote account, no multi-tenancy.
 
 ---
 
-## 1. Obiettivi
+## 1. Goals
 
-- Software installabile e **eseguito in locale** su una singola macchina (Windows / Linux / macOS).
-- **BYOD (Bring Your Own Database)**: si connette a DB *già esistenti* dell'utente.
-- Copre i tre pilastri di Visual DB: **Form**, **Sheet**, **Report**.
-- **Architettura aperta e multi-DB**: PostgreSQL, MySQL/MariaDB, SQL Server, Oracle, SQLite, DuckDB.
-- Concetto centrale: tutto è generato da una **query-spec** (JSON). Form/Sheet/Report sono
-  soltanto *render* diversi della stessa spec.
-- **Layout moderno**: interfaccia pulita, griglie **Excel-like**, **grafici embedded**, e
-  copia/incolla di tabelle, grafici e query (vedi sezione 6).
+- Software installable and **run locally** on a single machine (Windows / Linux / macOS).
+- **BYOD (Bring Your Own Database)**: connects to the user's *existing* databases.
+- Covers the three pillars of Visual DB: **Form**, **Sheet**, **Report**.
+- **Open, multi-DB architecture**: PostgreSQL, MySQL/MariaDB, SQL Server, Oracle, SQLite, DuckDB.
+- Central concept: everything is generated from a **query-spec** (JSON). Form/Sheet/Report are
+  just different *renders* of the same spec.
+- **Modern layout**: clean interface, **Excel-like** grids, **embedded charts**, and
+  copy/paste of tables, charts and queries (see section 6).
 
-## 2. Non-obiettivi (esplicito)
+## 2. Non-goals (explicit)
 
-- Prodotto cloud / SaaS.
-- Multi-tenant, fatturazione, account remoti.
-- Sincronizzazione o storage in cloud dei dati utente.
-- Sostituire lo strumento di amministrazione del DB.
+- Cloud / SaaS product.
+- Multi-tenant, billing, remote accounts.
+- Cloud sync or cloud storage of user data.
+- Replacing the DB administration tool.
 
-> Nota: i *database target* possono risiedere in remoto (es. un Postgres su un altro server),
-> ma **l'applicazione** e i suoi metadati stanno sempre in locale.
+> Note: the *target databases* may be remote (e.g. a Postgres on another server), but **the
+> application** and its metadata always stay local.
 
-## 3. Modello concettuale
+## 3. Conceptual model
 
-Non esistono "form" e "report" come entità dati distinte. Esiste una **query-spec**:
+There are no distinct "form" and "report" data entities. There is a **query-spec**:
 
-- `main_table` — tabella principale (l'unica aggiornabile in form/sheet)
-- `related[]` — tabelle correlate via foreign key (sola lettura)
-- `columns[]` — colonne selezionate con alias
-- `filters[]` — condizioni parametrizzate
-- `params[]` — parametri (con supporto valori multipli e cascata)
+- `main_table` - the main table (the only one updatable in form/sheet)
+- `related[]` - related tables via foreign key (read-only)
+- `columns[]` - selected columns with aliases
+- `filters[]` - parametrized conditions
+- `params[]` - parameters (with multi-value and cascade support)
 
-Un **unico compilatore** trasforma la query-spec in `sqlalchemy.select()`. Tutto il resto è UI.
+A **single compiler** turns the query-spec into `sqlalchemy.select()`. Everything else is UI.
 
-## 4. Architettura & moduli
+## 4. Architecture & modules
 
-**Applicazione monolitica**: un solo codebase Python, un solo processo, un solo
-eseguibile. Nessuna separazione frontend/backend, nessun build JS, nessuna API HTTP
-da mantenere. La UI è scritta in **NiceGUI** (Python puro) e lo stesso codice gira sia
-come finestra **desktop nativa** (`ui.run(native=True)`) sia come **web app** locale
-(`ui.run()`, bind su `127.0.0.1`).
+**Monolithic application**: a single Python codebase, a single process, a single executable.
+No frontend/backend separation, no JS build, no HTTP API to maintain. The UI is written in
+**NiceGUI** (pure Python) and the same code runs both as a **native desktop window**
+(`ui.run(native=True)`) and as a local **web app** (`ui.run()`, bound to `127.0.0.1`).
 
 ```
 dbvisual/
-  core/                # layer DB-agnostico (Fase 1)
-    connections.py     # crea Engine SQLAlchemy per dialetto; pool; test connessione
-    introspect.py      # reflect di tabelle/colonne/tipi; rilevamento FK
-    queryspec.py       # modelli Pydantic della query-spec (JSON serializzabile)
-    compiler.py        # query-spec -> sqlalchemy.select()   [CUORE del sistema]
-    crud.py            # insert/update/delete generico; transazioni (master-detail)
-  meta/                # persistenza locale (Fase 2)
-    store.py           # persistenza locale (SQLite) di connessioni + definizioni
-    models.py          # schema del metadata store (SQLAlchemy Core)
-    secrets.py         # cifratura credenziali DB (keyring o Fernet)
-  app/                 # UI monolitica NiceGUI (Fase 2+)
-    shell.py           # layout: header + navigazione laterale
-    main.py            # costruzione app + ui.run (desktop/web)
-    pages/             # una pagina per sezione (connections, applications, ...)
-    components/        # widget riutilizzabili
-    cli.py             # comando `dbvisual`: avvia l'app
+  core/                # DB-agnostic layer (Phase 1)
+    connections.py     # creates a SQLAlchemy Engine per dialect; pool; connection test
+    introspect.py      # reflection of tables/columns/types; FK detection
+    queryspec.py       # Pydantic query-spec models (JSON serializable)
+    compiler.py        # query-spec -> sqlalchemy.select()   [CORE of the system]
+    crud.py            # generic insert/update/delete; transactions (master-detail)
+  meta/                # local persistence (Phase 2)
+    store.py           # local persistence (SQLite) of connections + definitions
+    models.py          # metadata store schema (SQLAlchemy Core)
+    secrets.py         # DB credential encryption (keyring or Fernet)
+  app/                 # monolithic NiceGUI UI (Phase 2+)
+    shell.py           # layout: header + side navigation
+    main.py            # app assembly + ui.run (desktop/web)
+    pages/             # one page per section (connections, applications, ...)
+    components/        # reusable widgets
+    cli.py             # `dbvisual` command: starts the app
 main.py                # entrypoint (--mode desktop | web)
 ```
 
-## 5. Stack tecnico (deciso)
+## 5. Technical stack (decided)
 
-- **Python** ≥ 3.11
-- **Astrazione DB**: SQLAlchemy Core **2.0** (non l'ORM) — introspezione via `inspect()` /
-  `MetaData.reflect()`. È il layer che rende il tutto DB-agnostico.
-- **UI = NiceGUI** (Python puro): applicazione monolitica, nessun frontend/backend separato,
-  nessun build JS. Lo stesso codice gira **desktop nativo** (`ui.run(native=True)`, via
-  pywebview) o **web** locale (`ui.run()`, bind esclusivo su `127.0.0.1`).
-  - **Griglia Excel-like**: `ui.aggrid` (AG Grid) — editing inline, ordinamento, filtro,
-    selezione a range.
-  - **Grafici embedded**: `ui.echart` (Apache ECharts, Apache-2.0): colonne/barre,
-    torta/ciambella, treemap, scatter/bubble, linea, choropleth, time-series con finestra
-    scorrevole. Export come PNG/SVG.
-  - **Layout/UI**: componenti NiceGUI con classi Tailwind per interfacce pulite e responsive.
-- **Validazione**: Pydantic v2 (anche per la query-spec).
-- **Metadata store**: SQLite locale, file in cartella utente
-  (`~/.dbvisual/metadata.db` o equivalente `platformdirs`).
-- **Credenziali DB**: `keyring` (portachiavi OS) con fallback a file cifrato `cryptography.Fernet`.
-- **Packaging**: eseguibile portabile con **`nicegui-pack`** (basato su PyInstaller);
-  installabile anche via `pip install .` + comando `dbvisual`.
+- **Python** >= 3.11
+- **DB abstraction**: SQLAlchemy Core **2.0** (not the ORM) - introspection via `inspect()` /
+  `MetaData.reflect()`. This is the layer that makes everything DB-agnostic.
+- **UI = NiceGUI** (pure Python): monolithic application, no separate frontend/backend, no JS
+  build. The same code runs **native desktop** (`ui.run(native=True)`, via pywebview) or local
+  **web** (`ui.run()`, bound exclusively to `127.0.0.1`).
+  - **Excel-like grid**: `ui.aggrid` (AG Grid) - inline editing, sorting, filtering, range
+    selection.
+  - **Embedded charts**: `ui.echart` (Apache ECharts, Apache-2.0): columns/bars, pie/donut,
+    treemap, scatter/bubble, line, choropleth, time-series with a sliding window. Export as
+    PNG/SVG.
+  - **Layout/UI**: NiceGUI components with Tailwind classes for clean, responsive interfaces.
+- **Validation**: Pydantic v2 (also for the query-spec).
+- **Metadata store**: local SQLite, file in the user directory
+  (`~/.dbvisual/metadata.db` or the `platformdirs` equivalent).
+- **DB credentials**: `keyring` (OS keychain) with a `cryptography.Fernet` encrypted-file fallback.
+- **Packaging**: portable executable with **`nicegui-pack`** (based on PyInstaller); also
+  installable via `pip install .` + the `dbvisual` command.
 
-### Driver per DB (URL SQLAlchemy)
+### DB drivers (SQLAlchemy URL)
 
 | DB | Driver | URL |
 |---|---|---|
@@ -98,342 +97,338 @@ main.py                # entrypoint (--mode desktop | web)
 | SQL Server | `pyodbc` | `mssql+pyodbc://` |
 | Oracle | `oracledb` | `oracle+oracledb://` |
 | SQLite | built-in | `sqlite:///path` |
-| DuckDB | `duckdb_engine` | `duckdb:///path` · `duckdb:///:memory:` |
+| DuckDB | `duckdb_engine` | `duckdb:///path` , `duckdb:///:memory:` |
 
-## 6. Requisiti UI/UX
+## 6. UI/UX requirements
 
-Layout moderno, pensato per l'uso quotidiano da parte di utenti non tecnici.
+Modern layout, designed for daily use by non-technical users.
 
-**Griglie Excel-like (Sheet)** — `ui.aggrid`
-- Editing inline delle celle con validazione al volo.
-- Selezione a range, navigazione da tastiera, fill-handle dove possibile.
-- Raggruppamento, ordinamento, filtro e ricerca full-text as-you-type.
-- Styling condizionale (colora la cella in base al valore).
-- Salvataggio a lotti (batch) delle modifiche in transazione.
+**Excel-like grids (Sheet)** - `ui.aggrid`
+- Inline cell editing with on-the-fly validation.
+- Range selection, keyboard navigation, fill-handle where possible.
+- Grouping, sorting, filtering and as-you-type full-text search.
+- Conditional styling (color the cell based on the value).
+- Batch save of changes in a transaction.
 
-**Grafici embedded (Report)** — `ui.echart`
-- Grafici incorporati direttamente nella pagina del report (non finestre separate).
-- Tipi: colonna/barra, torta/ciambella, treemap, scatter/bubble, linea, choropleth, time-series.
-- Interazione: filtro, pivot, zoom; time-series con finestra temporale scorrevole.
+**Embedded charts (Report)** - `ui.echart`
+- Charts embedded directly in the report page (not separate windows).
+- Types: column/bar, pie/donut, treemap, scatter/bubble, line, choropleth, time-series.
+- Interaction: filter, pivot, zoom; time-series with a sliding time window.
 
-**Copia / incolla (interoperabilità)**
-- **Tabelle**: copiare una selezione dalla griglia verso Excel/foglio (formato TSV) e
-  incollare dati tabellari da Excel dentro la griglia.
-- **Grafici**: copiare/esportare il grafico come immagine (PNG/SVG).
-- **Query**: copiare/esportare la query (SQL generato) e re-importare una query-spec.
+**Copy / paste (interoperability)**
+- **Tables**: copy a grid selection to Excel/spreadsheet (TSV format) and paste tabular data
+  from Excel into the grid.
+- **Charts**: copy/export the chart as an image (PNG/SVG).
+- **Query**: copy/export the query (generated SQL) and re-import a query-spec.
 
-**Layout generale**
-- Interfaccia pulita e responsive; navigazione tra Connessioni, Applicazioni, Form, Sheet, Report.
-- Editor visuale della query-spec (query builder) con join automatici da FK.
+**General layout**
+- Clean, responsive interface; navigation across Connections, Applications, Form, Sheet, Report.
+- Visual query-spec editor (query builder) with automatic joins from FKs.
 
-## 7. Sicurezza (contesto locale)
+## 7. Security (local context)
 
-- In modalità web, bind esclusivo su `127.0.0.1`; nessuna porta esposta all'esterno.
-- Credenziali dei DB **mai in chiaro** su disco: usare il portachiavi di sistema
-  (fallback a file cifrato con `cryptography.Fernet`).
-- **Segreti generici** (password, passphrase dei file cifrati, API key LLM) via lo stesso
-  `meta/secrets` (`set_secret`/`get_secret`), mai in chiaro nel metadata store né nei log.
-- **Database file cifrati a riposo** (opzionale): SQLite via **SQLCipher** (`PRAGMA key`;
-  richiede il driver `pysqlcipher3`/`sqlcipher3`, altrimenti l'opzione è disabilitata con
-  messaggio) e **DuckDB** via cifratura nativa (`ATTACH … (ENCRYPTION_KEY …)`, DuckDB ≥ 1.4;
-  verificato su 1.5.x). La passphrase è un segreto in `meta/secrets`.
-- **Assistente AI** (opzionale, off di default): l'SQL generato passa da `ensure_readonly`
-  (solo `SELECT`/`WITH`) ed è mostrato per revisione prima dell'esecuzione; API key come segreto.
-- Tutte le query parametrizzate con bind-param (no string concatenation → no SQL injection).
+- In web mode, exclusive bind on `127.0.0.1`; no port exposed externally.
+- DB credentials **never in clear text** on disk: use the system keychain (fallback to a file
+  encrypted with `cryptography.Fernet`).
+- **Generic secrets** (passwords, encrypted-file passphrases, LLM API keys) via the same
+  `meta/secrets` (`set_secret`/`get_secret`), never in clear text in the metadata store or logs.
+- **Encrypted local file databases** (optional): SQLite via **SQLCipher** (`PRAGMA key`; requires
+  the `pysqlcipher3`/`sqlcipher3` driver, otherwise the option is disabled with a message) and
+  **DuckDB** via native encryption (`ATTACH ... (ENCRYPTION_KEY ...)`, DuckDB >= 1.4; verified on
+  1.5.x). The passphrase is a secret in `meta/secrets`.
+- **AI assistant** (optional, off by default): generated SQL passes through `ensure_readonly`
+  (only `SELECT`/`WITH`) and is shown for review before execution; API key stored as a secret.
+- All queries parametrized with bind-params (no string concatenation -> no SQL injection).
 
-## 8. Funzionalità per fasi
+## 8. Features by phase
 
-- **Fase 1 — Core** *(FATTA, 16 test verdi)*: connections, introspect, queryspec, compiler, crud.
-- **Fase 2 — Shell + Connessioni + Schema** *(FATTA, 28 test verdi)*: guscio NiceGUI, metadata store,
-  cifratura credenziali, gestione connessioni e browser dello schema.
-- **Fase 3 — Sheet** *(FATTA, 51 test verdi)*: griglia Excel-like `ui.aggrid` editabile a partire
-  da uno sheet salvato (definition `kind='sheet'`); editing solo sulla `main_table`, colonne related
-  in sola lettura, salvataggio batch transazionale, copia/incolla TSV ed export CSV. Arricchimenti:
-  optimistic locking, validazione di cella e campi calcolati/totali; query builder con join
-  "molti → uno" validati (vedi §10).
-- **Fase 4 — Form** *(FATTA, 64 test verdi)*: record singolo con navigazione prev/next, tipi di input e *available values*
-  (label ≠ value), default, validazione per campo, *submit rules* cross-field, *form rules*
-  condizionali e **attachment fields** (vedi §10).
-- **Fase 5 — Report** *(FATTA, 78 test verdi)*: tabellare + grafici `ui.echart` embedded (raggruppa/ordina/filtra, export immagine);
-  parametri multi-valore e a cascata, filtri AND/OR annidati, summary/pivot chart e time-series con zoom; query custom SQL sola lettura (vedi §10).
-- **Fase 6 — Master-detail** *(FATTA, 88 test verdi)*: master (form) + detail (grid) legati dalla PK del master, commit
-  atomico; copre one-to-many e many-to-many (vedi §10).
-- **Fase 7 — Automation / Webhooks** *(FATTA, 96 test verdi)*: su create/update/delete invia un webhook HTTP POST (JSON)
-  a URL configurati (Zapier/Slack/Discord/endpoint proprio); dispatch opzionale dal core, invio
-  non bloccante; config per sheet/form nel metadata store; placeholder `{{campo}}` / `:formatted`
-  / `:bare`; URL trattati come segreti (vedi §10).
-- **Fase 8 — Row-Level Security (PostgreSQL)** *(FATTA, 103 test verdi)*: RLS delegata a
-  Postgres (policy SQL dell'utente); dbvisual passa l'identità via `SET app.current_user_email`;
-  identità locale, flag RLS su form/sheet (solo Postgres) via `session_settings` (vedi §10).
-- **Fase 9 — Gestione schema / Database tab (DDL)** *(FATTA, 143 test verdi)*: operazioni di **scrittura**
-  sullo schema (create/drop tabelle, add/remove colonne, FK, diagramma, import/export CSV, DDL
-  generato da AI) con revisione ed esecuzione **manuale**, mai automatica (vedi §10).
-- **Impostazioni** *(FATTA)*: pagina `/settings` come **fonte unica** di configurazione — AI
-  (provider/modello/API key via `meta/secrets`), identità RLS (`app/identity`) e opzioni generali;
-  orchestra i moduli esistenti senza duplicarli.
+- **Phase 1 - Core** *(DONE, 16 green tests)*: connections, introspect, queryspec, compiler, crud.
+- **Phase 2 - Shell + Connections + Schema** *(DONE, 28 green tests)*: NiceGUI shell, metadata
+  store, credential encryption, connection management and schema browser.
+- **Phase 3 - Sheet** *(DONE, 51 green tests)*: editable Excel-like `ui.aggrid` grid from a saved
+  sheet (definition `kind='sheet'`); editing only on `main_table`, related columns read-only,
+  transactional batch save, TSV copy/paste and CSV export. Enhancements: optimistic locking,
+  cell validation and computed/total columns; query builder with validated "many -> one" joins
+  (see section 10).
+- **Phase 4 - Form** *(DONE, 64 green tests)*: single record with prev/next navigation, input
+  types and *available values* (label != value), defaults, per-field validation, cross-field
+  *submit rules*, conditional *form rules* and **attachment fields** (see section 10).
+- **Phase 5 - Report** *(DONE, 78 green tests)*: tabular + embedded `ui.echart` charts
+  (group/sort/filter, image export); multi-value and cascading parameters, nested AND/OR filters,
+  summary/pivot chart and time-series with zoom; read-only custom SQL queries (see section 10).
+- **Phase 6 - Master-detail** *(DONE, 88 green tests)*: master (form) + detail (grid) linked by
+  the master PK, atomic commit; covers one-to-many and many-to-many (see section 10).
+- **Phase 7 - Automation / Webhooks** *(DONE, 96 green tests)*: on create/update/delete, sends an
+  HTTP POST (JSON) webhook to configured URLs (Zapier/Slack/Discord/custom endpoint); optional
+  dispatch from the core, non-blocking send; config per sheet/form in the metadata store;
+  placeholders `{{field}}` / `:formatted` / `:bare`; URLs treated as secrets (see section 10).
+- **Phase 8 - Row-Level Security (PostgreSQL)** *(DONE, 103 green tests)*: RLS delegated to
+  Postgres (the user's SQL policies); dbvisual passes the identity via
+  `SET app.current_user_email`; local identity, RLS flag on form/sheet (Postgres only) via
+  `session_settings` (see section 10).
+- **Phase 9 - Schema management / Database tab (DDL)** *(DONE, 143 green tests)*: **write**
+  operations on the schema (create/drop tables, add/remove columns, FK, diagram, CSV
+  import/export, AI-generated DDL) with review and **manual** execution, never automatic (see
+  section 10).
+- **Settings** *(DONE)*: `/settings` page as the **single source** of configuration - AI
+  (provider/model/API key via `meta/secrets`), RLS identity (`app/identity`) and general options;
+  it orchestrates the existing modules without duplicating them.
 
-## 9. Requisiti non funzionali
+## 9. Non-functional requirements
 
-- Nessuna dipendenza da servizi esterni per funzionare.
-- Deve avviarsi con un singolo comando, come finestra desktop nativa o come web app locale.
-- Codice tipizzato (type hints), testabile in isolamento (SQLite in-memory per i test del core).
+- No dependency on external services to work.
+- Must start with a single command, as a native desktop window or a local web app.
+- Typed code (type hints), testable in isolation (in-memory SQLite for the core tests).
 
-## 10. Dettagli funzionali per fase
+## 10. Functional details by phase
 
-### Query builder (condiviso — Fasi 3/4/5)
+### Query builder (shared - Phases 3/4/5)
 
-**Direzione dei join: "molti → uno"**
-- La **main table** sta sempre sul lato **"molti"**; le tabelle related si aggiungono **solo**
-  seguendo le FK verso il lato **"uno"**. Una related è ammessa **solo se** è sul lato "uno" di
-  una relazione con una tabella **già presente** nella query.
-- Garantisce **una sola riga per record della main** (niente duplicati; `count` e aggregazioni
-  corretti).
-- Il query builder **valida** la direzione usando `core.introspect.detect_foreign_keys` e
-  **blocca** l'aggiunta di una related che starebbe sul lato "molti".
-- Solo la **main table è aggiornabile**; le related sono **read-only**.
-- *(Impatto potenziale sul core: eventuale helper di validazione della direzione FK; le
-  informazioni necessarie sono già esposte da `detect_foreign_keys`.)*
+**Join direction: "many -> one"**
+- The **main table** always sits on the **"many"** side; related tables are added **only** by
+  following FKs toward the **"one"** side. A related table is allowed **only if** it is on the
+  "one" side of a relation with a table **already present** in the query.
+- Guarantees **a single row per main record** (no duplicates; correct `count` and aggregations).
+- The query builder **validates** the direction using `core.introspect.detect_foreign_keys` and
+  **blocks** adding a related table that would sit on the "many" side.
+- Only the **main table is updatable**; related tables are **read-only**.
 
-**Troubleshooting PostgreSQL — "table has no primary keys"**
-- Per rilevare PK e constraint, l'utente di connessione deve avere il privilegio **`REFERENCES`**
-  (oltre a `SELECT`). Esempio:
-  `GRANT SELECT, REFERENCES ON ALL TABLES IN SCHEMA <schema> TO <utente>;`
-- Il messaggio **"table has no primary keys"** è tipicamente un problema di **permessi**, non di
-  schema: verificare il grant sopra.
+**PostgreSQL troubleshooting - "table has no primary keys"**
+- To detect PK and constraints, the connection user must have the **`REFERENCES`** privilege
+  (besides `SELECT`). Example:
+  `GRANT SELECT, REFERENCES ON ALL TABLES IN SCHEMA <schema> TO <user>;`
+- The **"table has no primary keys"** message is typically a **permissions** problem, not a
+  schema problem: check the grant above.
 
-### Fase 3 — Sheet: arricchimenti
+### Phase 3 - Sheet: enhancements
 
-**Optimistic locking (concorrenza)**
-- Al salvataggio non si devono sovrascrivere modifiche fatte da altri nel frattempo:
-  l'update di un record deve **fallire segnalando un conflitto** se il record è cambiato
-  dopo il caricamento.
-- Schema BYOD: non si può assumere una colonna di versione. Strategia di default:
-  `UPDATE ... WHERE PK = :pk AND <colonne_modificate> = <valori_originali>`. Se l'update
-  interessa **0 righe** → **conflitto**: l'utente ricarica il record e riprova.
-- Se lo schema espone una colonna di versione / `updated_at`, usarla come guardia al posto
-  del confronto sui valori originali.
-- **Impatto sul core** (retro-compatibile con l'API esistente): `crud.update_record` riceve
-  un parametro **opzionale** (es. condizioni di guardia / valori attesi) per aggiungere le
-  clausole `WHERE` sopra; senza il parametro il comportamento resta invariato.
+**Optimistic locking (concurrency)**
+- On save, changes made by others in the meantime must not be overwritten: a record update must
+  **fail signaling a conflict** if the record changed after it was loaded.
+- BYOD schema: a version column cannot be assumed. Default strategy:
+  `UPDATE ... WHERE PK = :pk AND <changed_columns> = <original_values>`. If the update affects
+  **0 rows** -> **conflict**: the user reloads the record and retries.
+- If the schema exposes a version / `updated_at` column, use it as the guard instead of comparing
+  the original values.
+- **Core impact** (backward compatible with the existing API): `crud.update_record` takes an
+  **optional** parameter (guard conditions / expected values) to add the `WHERE` clauses above;
+  without the parameter the behavior is unchanged.
 
-**Validazione a livello cella**
-- Regole configurabili per colonna: obbligatorio, min/max numerico, email, telefono,
-  regex, lunghezza.
-- Le celle non valide sono marcate visivamente (bordo/sottolineatura rossa) con messaggio.
-- Il **salvataggio è bloccato** finché tutti gli errori non sono corretti.
+**Cell-level validation**
+- Configurable per-column rules: required, numeric min/max, email, phone, regex, length.
+- Invalid cells are marked visually (red border/underline) with a message.
+- **Save is blocked** until all errors are fixed.
 
-**Campi calcolati e totali**
-- Colonne **formula** in stile Excel: espressione che referenzia altre colonne della stessa
-  riga, ricalcolata al volo quando cambiano le dipendenze.
-- **Totali di colonna** (somma/media/conteggio) in **riga fissa**, aggiornati istantaneamente
-  a ogni modifica e coerenti con la ricerca/filtro attivi.
-- Motore di formule **limitato e sicuro** (nessun `eval` arbitrario).
-- I campi calcolati sono di **sola visualizzazione** se non mappati a una colonna reale.
+**Computed columns and totals**
+- Excel-style **formula** columns: an expression referencing other columns of the same row,
+  recomputed on the fly when dependencies change.
+- **Column totals** (sum/avg/count) in a **fixed row**, updated instantly on each change and
+  consistent with the active search/filter.
+- **Limited and safe** formula engine (no arbitrary `eval`).
+- Computed columns are **display-only** if not mapped to a real column.
 
-### Fase 3 — Sheet: backlog (documentato, NON in questa fase)
-- Viste **private / condivise / bloccate** (sort/filter/group per utente vs globali).
-- **Snapshot** moment-in-time esportabili come HTML autocontenuto o Excel.
+### Phase 3 - Sheet: backlog (documented, NOT in this phase)
+- **Private / shared / locked** views (per-user vs global sort/filter/group).
+- **Snapshots** point-in-time exportable as self-contained HTML or Excel.
 
-> La **row-level security** è ora tracciata a parte come **Fase 8** (vedi sotto).
+> **Row-level security** is now tracked separately as **Phase 8** (see below).
 
-### Fase 4 — Form
+### Phase 4 - Form
 
-**Navigazione record**
-- Un form mostra i record di una query **uno alla volta** (naviga **prev/next**).
-- Main table **aggiornabile**, colonne lookup **read-only**.
-- **Query parameter** per selezionare quale record caricare.
+**Record navigation**
+- A form shows the records of a query **one at a time** (navigate **prev/next**).
+- Main table **updatable**, lookup columns **read-only**.
+- **Query parameter** to select which record to load.
 
-**Tipi di input per tipo dato**
-- **Testo**: single-line, multiline, formatted, radio.
-- **Numero**: textbox numerico.
-- **Data**: date picker.
-- **Booleano**: checkbox / radio.
-- **Dropdown**: quando la colonna ha *available values*.
+**Input types by data type**
+- **Text**: single-line, multiline, formatted, radio.
+- **Number**: numeric textbox.
+- **Date**: date picker.
+- **Boolean**: checkbox / radio.
+- **Dropdown**: when the column has *available values*.
 
-**Available values (valori ammessi)**
-- Sorgenti: valori **esistenti** della colonna, da **tabella**, da **query**, **lista manuale**.
-- Supporto **LABEL ≠ VALUE**: il dropdown mostra un'etichetta leggibile (es. nome dipendente)
-  ma **salva l'ID** nel DB.
-- Opzione **"consenti nuovi valori"** (l'utente può inserire un valore non in lista).
+**Available values (allowed values)**
+- Sources: **existing** column values, from a **table**, from a **query**, **manual list**.
+- **LABEL != VALUE** support: the dropdown shows a readable label (e.g. an employee name) but
+  **saves the ID** in the DB.
+- **"allow new values"** option (the user may enter a value not in the list).
 
 **Default value**
-- Valore predefinito per campo, applicato se l'utente non compila.
+- Per-field default value, applied if the user leaves it empty.
 
-**Validazione per campo** (riusa il motore di validazione dello Sheet, §Fase 3)
-- required, min/max numerico, min/max lunghezza, caratteri ammessi/vietati, regex, email,
-  telefono, zip, URL, carta di credito, e vincoli su **date** (non prima/dopo, oggi o dopo,
-  data di nascita, ecc.).
+**Per-field validation** (reuses the Sheet validation engine, Phase 3)
+- required, numeric min/max, min/max length, allowed/forbidden characters, regex, email, phone,
+  zip, URL, credit card, and **date** constraints (not before/after, today or after, date of
+  birth, etc.).
 
-**Submit rules (validazione cross-field)**
-- Regole a livello di **intero form** (es. "almeno uno tra due campi compilato"), **distinte**
-  dalla validazione del singolo campo. Bloccano il **submit** se non soddisfatte.
+**Submit rules (cross-field validation)**
+- Rules at the **whole-form** level (e.g. "at least one of two fields filled"), **distinct** from
+  single-field validation. They block the **submit** if not satisfied.
 
-**Form rules (logica condizionale)**
-- Abilita / disabilita / nascondi campi in base al valore di altri campi.
+**Form rules (conditional logic)**
+- Enable / disable / hide fields based on the value of other fields.
 
-### Fase 4 — Attachment fields (decisione architetturale)
+### Phase 4 - Attachment fields (architectural decision)
 
-> Introdotti nei **Form** (Fase 4) e **retro-applicati agli Sheet** (Fase 3).
+> Introduced in **Forms** (Phase 4) and **back-applied to Sheets** (Phase 3).
 
-- Il **file non va nel database**. Nel DB si salva **solo un campo TESTO** con i **metadati**
-  dell'allegato (`id`, `filename`, `content_type`, `size`) come **JSON**.
-- Il **contenuto** del file sta su **disco locale** (app locale, nessun cloud), in una
-  **cartella allegati dedicata** dell'app (via `platformdirs`), organizzata per
-  **applicazione/record**.
-- Operazioni: **upload, download, delete**.
-- Alla **cancellazione di un record** i relativi file allegati vengono eliminati (**cascade**).
-- Un **campo testo esistente** può essere **marcato come "attachment"**.
+- The **file does not go into the database**. Only a **TEXT** field is stored in the DB with the
+  attachment **metadata** (`id`, `filename`, `content_type`, `size`) as **JSON**.
+- The file **content** lives on **local disk** (local app, no cloud), in a dedicated app
+  **attachments folder** (via `platformdirs`), organized per **application/record**.
+- Operations: **upload, download, delete**.
+- On **record deletion**, the related attachment files are removed (**cascade**).
+- An **existing text field** can be **marked as "attachment"**.
 
-### Fase 5 — Report: precisazioni
+### Phase 5 - Report: details
 
-**Parametri di query**
-- **Multi-valore** (es. più stati contemporaneamente) e **a cascata** (la scelta di un
-  dropdown determina i valori disponibili nel successivo).
-- **UI di prompting**: pannello parametri mostrato prima/insieme al report; ogni parametro
-  ha il proprio input (es. select multipla); i parametri a cascata si aggiornano al cambio
-  del parametro padre.
+**Query parameters**
+- **Multi-value** (e.g. several states at once) and **cascading** (the choice in one dropdown
+  determines the values available in the next).
+- **Prompting UI**: a parameters panel shown before/with the report; each parameter has its own
+  input (e.g. a multi-select); cascading parameters update when the parent parameter changes.
 
-**Filtri compositi**
-- Condizioni **AND/OR annidate**, mostrate in forma **gerarchica** (albero/gruppi) per
-  evitare ambiguità di interpretazione.
+**Composite filters**
+- **Nested AND/OR** conditions, shown in **hierarchical** form (tree/groups) to avoid
+  interpretation ambiguity.
 
-**Grafici**
-- **Summary / pivot chart**: grafici che **aggregano** i dati e plottano gli aggregati
-  (es. vendite per Prodotto sull'asse categorie e Regione sulle serie), distinti dai grafici
-  "grezzi" sui valori riga-per-riga.
-- **Time-series** con **zoom** e finestra temporale scorrevole (confermato, già previsto in §6).
+**Charts**
+- **Summary / pivot chart**: charts that **aggregate** the data and plot the aggregates (e.g.
+  sales by Product on the category axis and Region on the series), distinct from "raw" per-row
+  charts.
+- **Time-series** with **zoom** and a sliding time window (confirmed, already planned in section 6).
 
-### Fase 6 — Master-detail (meccanismo)
+### Phase 6 - Master-detail (mechanism)
 
-- **Due query**: una per il **MASTER** (form normale) e una per i **DETAIL** (grid).
-- La query **detail** ha **esattamente un parametro**, valorizzato con la **PK del master**:
-  carica **solo** i detail del master corrente.
-- Sui detail: **insert / update / delete**.
-- **Commit** di master + detail in **UNA transazione atomica** (via `crud.save_master_detail`).
-- Copre **one-to-many** (FK nel lato "molti") e **many-to-many** (tabella di **giunzione** con
-  due FK; gestibile da entrambe le prospettive).
+- **Two queries**: one for the **MASTER** (a normal form) and one for the **DETAIL** (grid).
+- The **detail** query has **exactly one parameter**, set to the **master PK**: it loads **only**
+  the details of the current master.
+- On details: **insert / update / delete**.
+- **Commit** of master + details in **ONE atomic transaction** (via `crud.save_master_detail`).
+- Covers **one-to-many** (FK on the "many" side) and **many-to-many** (a **junction** table with
+  two FKs; workable from both perspectives).
 
-### Fase 7 — Automation / Webhooks
+### Phase 7 - Automation / Webhooks
 
-**Scopo**
-- Quando un record viene **creato / aggiornato / eliminato**, inviare un **webhook HTTP POST**
-  (JSON) a un URL configurato (Zapier, Slack, Discord, o endpoint proprio).
-- **Contesto locale**: i webhook partono dalla macchina dove gira dbvisual, che deve avere rete
-  in **uscita** verso i servizi target. **Nessun server in ingresso**: solo POST in uscita.
+**Purpose**
+- When a record is **created / updated / deleted**, send an **HTTP POST webhook** (JSON) to a
+  configured URL (Zapier, Slack, Discord, or a custom endpoint).
+- **Local context**: webhooks originate from the machine running dbvisual, which must have
+  **outbound** network access to the target services. **No inbound server**: outbound POST only.
 
-**Aggancio agli eventi**
-- Gli eventi si generano dal layer **`core.crud`** (insert/update/delete). Meccanismo di
-  **dispatch** con hook/callback **opzionali registrabili**, senza rompere API/test esistenti
-  del core.
-- L'invio HTTP è **non bloccante** e non deve far fallire il salvataggio se il webhook fallisce
-  (log dell'errore, **retry opzionale**).
+**Event hook**
+- Events are generated by the **`core.crud`** layer (insert/update/delete). A **dispatch**
+  mechanism with **optional registrable** hooks/callbacks, without breaking existing core
+  API/tests.
+- HTTP sending is **non-blocking** and must not fail the save if the webhook fails (error logged,
+  **optional retry**).
 
-**Configurazione (per sheet o form)**
-- Nome, URL, uno o più eventi (`created` / `updated` / `deleted`), formato body.
-- Persistita nel **metadata store**, legata alla definition. Bottone **"Test"**.
+**Configuration (per sheet or form)**
+- Name, URL, one or more events (`created` / `updated` / `deleted`), body format.
+- Persisted in the **metadata store**, bound to the definition. **"Test"** button.
 
-**Body JSON con placeholder** (handlebars sui campi della query), tre "flavor":
-- `{{campo}}` → valore **JSON valido** (numeri, booleani, stringhe tra virgolette).
-- `{{campo:formatted}}` → **stringa formattata** leggibile, sempre tra virgolette (fallback = raw).
-- `{{campo:bare}}` → **testo puro senza virgolette** (per inserimento dentro stringhe, es.
+**JSON body with placeholders** (handlebars over the query fields), three "flavors":
+- `{{field}}` -> a **valid JSON** value (numbers, booleans, quoted strings).
+- `{{field:formatted}}` -> a readable **formatted string**, always quoted (fallback = raw).
+- `{{field:bare}}` -> **raw text without quotes** (for insertion inside strings, e.g.
   Slack/Discord).
-- Body di **default** (auto-include tutti i campi della query, si adatta se cambiano) + body
-  **custom**. Esempi custom per Slack (`{"text": "…"}`) e Discord (`{"content": "…"}`) usando
-  `:bare` per restare JSON valido.
+- **Default** body (auto-includes all query fields, adapts if they change) + **custom** body.
+  Custom examples for Slack (`{"text": "..."}`) and Discord (`{"content": "..."}`) using `:bare`
+  to stay valid JSON.
 
-**Sicurezza**
-- Gli URL webhook possono contenere token: trattarli come **segreti** (non loggarli in chiaro,
-  valutare storage cifrato come per le password).
+**Security**
+- Webhook URLs may contain tokens: treat them as **secrets** (do not log them in clear text,
+  consider encrypted storage like the passwords).
 
-### Fase 8 — Row-Level Security (PostgreSQL)
+### Phase 8 - Row-Level Security (PostgreSQL)
 
-**Modello**
-- La RLS **non è implementata dall'applicazione**: è **delegata a PostgreSQL**. L'utente crea le
-  policy con SQL (`CREATE POLICY ... USING / WITH CHECK`) e abilita la RLS sulla tabella
-  (`ALTER TABLE ... ENABLE ROW LEVEL SECURITY`). dbvisual si limita a **passare l'identità**
-  dell'utente corrente al database.
-- Disponibile **solo per PostgreSQL**. Altri database non supportati per la RLS.
+**Model**
+- RLS is **not implemented by the application**: it is **delegated to PostgreSQL**. The user
+  creates the policies in SQL (`CREATE POLICY ... USING / WITH CHECK`) and enables RLS on the
+  table (`ALTER TABLE ... ENABLE ROW LEVEL SECURITY`). dbvisual only **passes the identity** of
+  the current user to the database.
+- Available **for PostgreSQL only**. Other databases are not supported for RLS.
 
-**Meccanismo**
-- Postgres filtra le righe in base a `current_setting('app.current_user_email')`.
-- dbvisual, a ogni sessione/connessione, esegue `SET app.current_user_email = <email>`.
+**Mechanism**
+- Postgres filters the rows based on `current_setting('app.current_user_email')`.
+- dbvisual, on each session/connection, runs `SET app.current_user_email = <email>`.
 
-**Prerequisiti**
-- **Identità utente**: l'app è locale **single-user, senza login**. La RLS richiede un'identità
-  (email) da passare al DB, dichiarata dall'utente e persistita in locale (`app/identity.py`,
-  via `platformdirs`). Finché non c'è identità, la RLS resta **inattiva** (nessun `SET`).
-- **Connessione**: deve usare un ruolo Postgres **NON superuser** e **NON owner** della tabella
-  (superuser/owner **bypassano** la RLS). Requisito di sicurezza, segnalato in UI.
+**Prerequisites**
+- **User identity**: the app is local **single-user, without login**. RLS requires an identity
+  (email) to pass to the DB, declared by the user and persisted locally (`app/identity.py`, via
+  `platformdirs`). Until there is an identity, RLS stays **inactive** (no `SET`).
+- **Connection**: must use a Postgres role that is **NOT superuser** and **NOT the table owner**
+  (superuser/owner **bypass** RLS). A security requirement, flagged in the UI.
 
-**Implementazione (additiva, non rompe API/test esistenti)**
-- `core/connections.py`: parametro **opzionale** `session_settings` (mappa chiave→valore) che, a
-  ogni apertura di connessione, esegue i corrispondenti `SET` (`timezone`, `search_path`,
-  `statement_timeout`, e `app.current_user_email`). Default: nessuno; no-op sui dialetti non-SET.
-- `app/identity.py`: **identità corrente** (email) persistita localmente, impostabile dalla UI
-  (pagina Connessioni). Vuota = RLS inattiva.
-- `app/rls.py`: `rls_session_settings(connection, rls_enabled, identity)` restituisce
-  `{app.current_user_email: <email>}` **solo** se il flag è attivo, la connessione è Postgres e
-  l'identità è presente; altrimenti `{}` (flag ignorato su altri dialetti).
-- Flag **RLS** per definition (`SheetSpec.rls` / `FormSpec.rls`, default `False`): checkbox nel
-  design panel, visibile solo per connessioni Postgres. All'apertura, l'engine viene costruito
-  con le `session_settings` RLS.
+**Implementation (additive, does not break existing API/tests)**
+- `core/connections.py`: an **optional** `session_settings` parameter (key->value map) that, on
+  each connection open, runs the corresponding `SET` (`timezone`, `search_path`,
+  `statement_timeout`, and `app.current_user_email`). Default: none; no-op on non-SET dialects.
+- `app/identity.py`: the **current identity** (email) persisted locally, settable from the UI
+  (Connections page). Empty = RLS inactive.
+- `app/rls.py`: `rls_session_settings(connection, rls_enabled, identity)` returns
+  `{app.current_user_email: <email>}` **only** if the flag is enabled, the connection is Postgres
+  and the identity is present; otherwise `{}` (flag ignored on other dialects).
+- **RLS** flag per definition (`SheetSpec.rls` / `FormSpec.rls`, default `False`): a checkbox in
+  the design panel, visible only for Postgres connections. On open, the engine is built with the
+  RLS `session_settings`.
 
-**Non in questa fase**: schermata di login, gestione utenti, checkbox RLS su form/sheet,
-enforcement lato app.
+### AI assistant (NL -> SQL) - Report only
 
-### Assistente AI (NL → SQL) — solo Report
+> **Optional feature, disabled by default**. LLM provider of choice (Claude / OpenAI / Gemini /
+> DeepSeek) via the **user's API key** (treated as a secret in `meta/secrets`, never in clear text).
 
-> Feature **opzionale, disattivata di default**. Provider LLM a scelta (Claude / OpenAI / Gemini /
-> DeepSeek) via **API key dell'utente** (trattata come segreto in `meta/secrets`, mai in chiaro).
+- **Current scope**: the assistant generates **READ-ONLY SQL (SELECT)** for **Reports**, from a
+  natural-language description + the reflected schema (table/column names).
+- The generated SQL is **always shown to the user for review** before execution and passes
+  through `ensure_readonly` (Phase 5): **no automatic execution** of write statements.
+- It **does NOT generate DDL** or modify the schema in this scope (for schema management see
+  Phase 9).
+- **Transparency / privacy** (mandatory in the UI): enabling the AI sends the DB structure
+  (table/column names) and the request text to the chosen **cloud provider**, at a per-token cost
+  borne by the user. Off by default; explicit opt-in.
+- **Integration**: a "Generate with AI" button **only** in the **Reports** query builder (where
+  custom queries are allowed), not in the form/sheet builders (which stay structured query
+  builders).
 
-- **Scope attuale**: l'assistente genera **SQL di SOLA LETTURA (SELECT)** per i **Report**, a
-  partire da una descrizione in linguaggio naturale + lo schema riflesso (nomi tabelle/colonne).
-- L'SQL generato è **sempre mostrato all'utente per revisione** prima dell'esecuzione e passa da
-  `ensure_readonly` (Fase 5): **nessuna esecuzione automatica** di statement di scrittura.
-- **NON genera DDL** né modifica lo schema in questa fase (per la gestione schema vedi Fase 9).
-- **Trasparenza / privacy** (obbligatoria in UI): attivando l'AI, la struttura del DB (nomi
-  tabelle/colonne) e il testo della richiesta vengono inviati al **provider cloud** scelto, con
-  costo per token a carico dell'utente. Off di default; attivazione esplicita.
-- **Integrazione**: pulsante "Genera con AI" **solo** nel query builder dei **Report** (dove sono
-  ammesse le query custom), non nei builder di form/sheet (che restano query builder strutturati).
+### Phase 9 - Schema management / Database tab (DDL)
 
-### Fase 9 — Gestione schema / Database tab (DDL)
+- **Purpose**: create and manage the DB schema without external tools (like Visual DB's "Database
+  tab"). Until now dbvisual did read-only **introspection**; this phase introduces schema
+  **write** operations.
+- **Functions**: create/drop tables, add/remove columns, define relations (FK), view a table's
+  data, relationship diagram, CSV import/export.
+- **AI assistant for the schema** (reuses the LLM provider): generates **DDL** from a
+  natural-language description (e.g. "a table to track employee training with completion dates and
+  certification status") -> `CREATE TABLE` with columns, types and relations.
+- **Security (mandatory)**: composed/generated DDL is **never executed automatically**; it is
+  always **shown for review** and requires **explicit confirmation**. Destructive operations
+  (`DROP`, data-losing `ALTER`) require **double confirmation** and a warning. DDL is a **separate**
+  path from read-only queries: it does **not** pass through `ensure_readonly` (which stays for
+  SELECTs).
+- **Dialect**: DDL is dialect-dependent (Postgres / MySQL / SQL Server / Oracle / SQLite /
+  DuckDB): use SQLAlchemy where possible or per-dialect generation; document the limits.
+- **Permission prerequisite**: the connection user must have **DDL** privileges on the database.
 
-- **Scopo**: creare e gestire lo schema del DB senza strumenti esterni (come il "Database tab" di
-  Visual DB). Finora dbvisual fa solo **introspezione in lettura**; questa fase introduce le
-  operazioni di **scrittura sullo schema**.
-- **Funzioni**: creare/eliminare tabelle, aggiungere/rimuovere colonne, definire relazioni (FK),
-  visualizzare i dati di una tabella, diagramma delle relazioni, import/export CSV.
-- **Assistente AI per lo schema** (riusa il provider LLM): genera **DDL** da una descrizione in
-  linguaggio naturale (es. "tabella per tracciare la formazione dei dipendenti con date di
-  completamento e stato certificazione") → `CREATE TABLE` con colonne, tipi e relazioni.
-- **Sicurezza (obbligatoria)**: il DDL generato/composto **non viene mai eseguito
-  automaticamente**; è sempre **mostrato per revisione** e richiede **conferma esplicita**.
-  Operazioni distruttive (`DROP`, `ALTER` con perdita dati) con **doppia conferma** e avviso. Il
-  DDL è un percorso **separato** dalle query di sola lettura: **non** passa da `ensure_readonly`
-  (che resta per le SELECT).
-- **Dialetto**: il DDL dipende dal dialetto (Postgres / MySQL / SQL Server / Oracle / SQLite /
-  DuckDB): usare SQLAlchemy dove possibile o generazione per-dialetto; documentare i limiti.
-- **Prerequisito permessi**: l'utente di connessione deve avere i privilegi **DDL** sul database.
-
-**Implementazione**
+**Implementation**
 - `core/schema_ddl.py`: `compose_*` (create/drop table, add/drop column, add/drop FK, rename)
-  restituisce il **testo SQL**; `execute_ddl` lo esegue in transazione = due passi distinti.
-  Type mapping logico → tipi SQLAlchemy per-dialetto; `DDLNotSupported`/`DDLPermissionError`.
-  **Limite noto**: SQLite non supporta ADD/DROP FK via `ALTER` (usare FK inline in create).
-- `app/pages/schema.py`: browser + editor con dialog **"Rivedi ed esegui"** (SQL mostrato,
-  **doppia conferma** per operazioni distruttive), import/export CSV, diagramma FK (`ui.mermaid`).
-- `app/schema_service.py`: helper CSV (inferisce colonne, `csv_create_table_ddl`, `table_to_csv`)
-  e `generate_ddl_via_ai` (riusa il provider LLM con un system prompt DDL; sempre per revisione).
+  returns the **SQL text**; `execute_ddl` runs it in a transaction = two distinct steps. Logical
+  type mapping -> per-dialect SQLAlchemy types; `DDLNotSupported`/`DDLPermissionError`.
+  **Known limit**: SQLite does not support ADD/DROP FK via `ALTER` (use inline FKs in create).
+- `app/pages/schema.py`: browser + editor with a **"Review and execute"** dialog (SQL shown,
+  **double confirmation** for destructive operations), CSV import/export, FK diagram (`ui.mermaid`).
+- `app/schema_service.py`: CSV helpers (infer columns, `csv_create_table_ddl`, `table_to_csv`)
+  and `generate_ddl_via_ai` (reuses the LLM provider with a DDL system prompt; always for review).
 
-### Impostazioni (pagina `/settings`)
+### Settings (`/settings` page)
 
-- **Fonte unica** di configurazione dell'app; orchestra i moduli esistenti senza duplicarli.
-- **AI**: `app/ai/settings` + `meta/secrets`. Abilita/disabilita (off di default), provider,
-  modello, **API key** salvata **solo** come segreto (`ai:<provider>`); mostrata come
-  *impostata/non impostata* (mai il valore), con sostituisci/elimina e **Testa** (mockabile).
-- **Identità / RLS**: `app/identity` — email `app.current_user_email` (vuota = RLS inattiva).
-- **Generale**: modalità di avvio preferita (`app/app_settings`) e **cartella dati utente**
-  (`platformdirs`) in sola lettura per trasparenza (metadata store, allegati, vault dei segreti).
-- I dialog contestuali AI (`app/ai/ui.py`) leggono/scrivono la **stessa** config e gli stessi
-  segreti della pagina Impostazioni.
+- **Single source** of app configuration; orchestrates the existing modules without duplicating
+  them.
+- **AI**: `app/ai/settings` + `meta/secrets`. Enable/disable (off by default), provider, model,
+  **API key** saved **only** as a secret (`ai:<provider>`); shown as *set/not set* (never the
+  value), with replace/delete and **Test** (mockable).
+- **Identity / RLS**: `app/identity` - `app.current_user_email` email (empty = RLS inactive).
+- **General**: preferred startup mode (`app/app_settings`) and the **user data directory**
+  (`platformdirs`) shown read-only for transparency (metadata store, attachments, secrets vault).
+- The contextual AI dialogs (`app/ai/ui.py`) read/write the **same** config and the same secrets
+  as the Settings page.
