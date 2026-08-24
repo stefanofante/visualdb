@@ -23,18 +23,18 @@ from dbvisual.core.introspect import get_primary_key, reflect_schema
 from dbvisual.core.queryspec import QuerySpec
 
 __all__ = [
-    "SheetSpec",
-    "SheetColumn",
-    "SheetView",
     "ConflictError",
-    "config_from_connection",
-    "resolve_engine",
-    "clear_engine_cache",
-    "get_table",
-    "build_view",
-    "load_rows",
-    "build_operations",
+    "SheetColumn",
+    "SheetSpec",
+    "SheetView",
     "apply_batch",
+    "build_operations",
+    "build_view",
+    "clear_engine_cache",
+    "config_from_connection",
+    "get_table",
+    "load_rows",
+    "resolve_engine",
 ]
 
 
@@ -44,14 +44,16 @@ class SheetSpec(BaseModel):
     connection_id: int
     spec: QuerySpec
     rls: bool = False  # Postgres row-level security (Phase 8); ignored otherwise.
-    attachment_fields: list[str] = Field(default_factory=list)  # Task 1: attachment columns
+    attachment_fields: list[str] = Field(
+        default_factory=list
+    )  # Task 1: attachment columns
 
     def to_json(self) -> str:
         """Serialize to the JSON string stored in ``definitions.queryspec_json``."""
         return self.model_dump_json()
 
     @classmethod
-    def from_json(cls, raw: str) -> "SheetSpec":
+    def from_json(cls, raw: str) -> SheetSpec:
         """Rebuild a :class:`SheetSpec` from its stored JSON."""
         return cls.model_validate_json(raw)
 

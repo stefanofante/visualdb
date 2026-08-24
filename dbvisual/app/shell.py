@@ -9,14 +9,14 @@ from nicegui import ui
 
 # (label, icon, route) for each primary navigation entry.
 _NAV: list[tuple[str, str, str]] = [
-    ("Connessioni", "storage", "/connections"),
+    ("Connections", "storage", "/connections"),
     ("Database", "schema", "/schema"),
     ("Sheet", "grid_on", "/sheets"),
     ("Form", "dynamic_form", "/forms"),
     ("Report", "insights", "/reports"),
     ("Master-Detail", "account_tree", "/master-detail"),
-    ("Applicazioni", "apps", "/applications"),
-    ("Impostazioni", "settings", "/settings"),
+    ("Applications", "apps", "/applications"),
+    ("Settings", "settings", "/settings"),
 ]
 
 

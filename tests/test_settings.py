@@ -6,18 +6,19 @@ from pathlib import Path
 
 from dbvisual.app.ai.settings import (
     AIConfig,
+    delete_api_key,
     get_ai_config,
     get_api_key,
     has_api_key,
-    delete_api_key,
     save_api_key,
     set_ai_config,
+)
+from dbvisual.app.ai.settings import (
     test_provider as run_provider_test,
 )
 from dbvisual.app.app_settings import get_startup_mode, set_startup_mode
 from dbvisual.app.identity import get_identity, set_identity
 from dbvisual.meta.secrets import SecretStore
-
 
 # --- one source of truth: settings + secrets shared ------------------------
 

@@ -34,19 +34,19 @@ def _create_dialog(on_saved) -> None:
     conns = state.store.list_connections()
 
     with ui.dialog() as dialog, ui.card().classes("w-[640px] gap-3"):
-        ui.label("Nuovo report").classes("text-lg font-semibold")
-        name = ui.input("Nome report").classes("w-full")
+        ui.label("New report").classes("text-lg font-semibold")
+        name = ui.input("Report name").classes("w-full")
         app_select = ui.select(
             {a["id"]: a["name"] for a in apps},
-            label="Applicazione",
+            label="Application",
             value=apps[0]["id"] if apps else None,
         ).classes("w-full")
-        new_app = ui.input("…oppure nuova applicazione").classes("w-full")
+        new_app = ui.input("...or new application").classes("w-full")
         conn_select = ui.select(
-            {c["id"]: c["name"] for c in conns}, label="Connessione"
+            {c["id"]: c["name"] for c in conns}, label="Connection"
         ).classes("w-full")
         source = ui.toggle(
-            {"builder": "Query builder", "custom": "SQL custom (sola lettura)"},
+            {"builder": "Query builder", "custom": "Custom SQL (read-only)"},
             value="builder",
         )
 
@@ -57,7 +57,7 @@ def _create_dialog(on_saved) -> None:
 
         with custom_box:
             custom_sql = ui.textarea(
-                placeholder="SELECT ... (solo lettura, bind con :param)"
+                placeholder="SELECT ... (read-only, bind with :param)"
             ).classes("w-full")
 
             def _apply_ai_sql(sql: str) -> None:
@@ -65,16 +65,16 @@ def _create_dialog(on_saved) -> None:
 
             def _open_ai() -> None:
                 if conn_select.value is None:
-                    ui.notify("Scegli prima una connessione.", type="warning")
+                    ui.notify("Choose a connection first.", type="warning")
                     return
                 ai_generate_dialog(int(conn_select.value), _apply_ai_sql)
 
             with ui.row().classes("gap-2"):
                 ui.button(
-                    "Genera con AI", icon="auto_awesome", on_click=_open_ai
+                    "Generate with AI", icon="auto_awesome", on_click=_open_ai
                 ).props("outline size=sm")
                 ui.button(
-                    "Impostazioni AI", icon="settings", on_click=ai_settings_dialog
+                    "AI settings", icon="settings", on_click=ai_settings_dialog
                 ).props("flat size=sm")
 
         def _toggle_source() -> None:
@@ -96,19 +96,17 @@ def _create_dialog(on_saved) -> None:
                 _engine, metadata = resolve_engine(conn, password, refresh=True)
                 tables = list_tables(metadata)
             except Exception as exc:
-                result.set_text(f"Errore schema: {exc}")
+                result.set_text(f"Schema error: {exc}")
                 result.classes(replace="text-sm text-red-600")
                 return
             ctx["metadata"] = metadata
             with builder_box:
-                main_select = ui.select(tables, label="Tabella principale").classes(
-                    "w-full"
-                )
-                cols_select = ui.select([], label="Colonne", multiple=True).classes(
+                main_select = ui.select(tables, label="Main table").classes("w-full")
+                cols_select = ui.select([], label="Columns", multiple=True).classes(
                     "w-full"
                 )
                 rel_select = ui.select(
-                    [], label="Tabelle correlate", multiple=True
+                    [], label="Related tables", multiple=True
                 ).classes("w-full")
                 ctx.update(main=main_select, cols=cols_select, rel=rel_select)
 
@@ -131,7 +129,7 @@ def _create_dialog(on_saved) -> None:
 
         def save() -> None:
             if not name.value or conn_select.value is None:
-                result.set_text("Nome e connessione sono obbligatori.")
+                result.set_text("Name and connection are required.")
                 result.classes(replace="text-sm text-red-600")
                 return
             app_id = int(app_select.value) if app_select.value else None
@@ -156,7 +154,7 @@ def _create_dialog(on_saved) -> None:
                 metadata = ctx.get("metadata")
                 main = ctx.get("main")
                 if metadata is None or main is None or not main.value:
-                    result.set_text("Carica lo schema e scegli la tabella principale.")
+                    result.set_text("Load the schema and choose the main table.")
                     result.classes(replace="text-sm text-red-600")
                     return
                 spec = build_queryspec(
@@ -178,8 +176,8 @@ def _create_dialog(on_saved) -> None:
             on_saved()
 
         with ui.row().classes("w-full justify-end gap-2"):
-            ui.button("Salva", on_click=save).props("color=primary")
-            ui.button("Annulla", on_click=dialog.close).props("flat")
+            ui.button("Save", on_click=save).props("color=primary")
+            ui.button("Cancel", on_click=dialog.close).props("flat")
         _toggle_source()
     dialog.open()
 
@@ -191,9 +189,9 @@ def reports_page() -> None:
 
     with frame(active="/reports"):
         with ui.row().classes("w-full items-center justify-between"):
-            ui.label("Report").classes("text-2xl font-bold")
+            ui.label("Reports").classes("text-2xl font-bold")
             ui.button(
-                "Nuovo report", icon="add", on_click=lambda: _create_dialog(refresh)
+                "New report", icon="add", on_click=lambda: _create_dialog(refresh)
             ).props("color=primary")
 
         container = ui.column().classes("w-full gap-2")
@@ -206,7 +204,7 @@ def reports_page() -> None:
             ]
             with container:
                 if not reports:
-                    ui.label("Nessun report salvato.").classes("text-gray-500")
+                    ui.label("No saved reports.").classes("text-gray-500")
                     return
                 for d in reports:
                     with ui.card().classes("w-full"):
@@ -243,18 +241,18 @@ def report_viewer(definition_id: int) -> None:
     with frame(active="/reports"):
         definition = state.store.get_definition(definition_id)
         if definition is None or definition["kind"] != "report":
-            ui.label("Report non trovato.").classes("text-red-600")
+            ui.label("Report not found.").classes("text-red-600")
             return
         report = ReportSpec.from_json(definition["queryspec_json"])
         conn = state.store.get_connection(report.connection_id)
         if conn is None:
-            ui.label("Connessione non disponibile.").classes("text-red-600")
+            ui.label("Connection not available.").classes("text-red-600")
             return
         password = state.secrets.get_password(conn["id"])
         try:
             engine, metadata = resolve_engine(conn, password)
         except Exception as exc:
-            ui.label(f"Impossibile aprire il report: {exc}").classes("text-red-600")
+            ui.label(f"Unable to open the report: {exc}").classes("text-red-600")
             return
 
         ui.label(definition["name"]).classes("text-2xl font-bold")
@@ -269,7 +267,7 @@ def report_viewer(definition_id: int) -> None:
                     param_inputs[p.name] = inp
 
         search = (
-            ui.input(placeholder="Cerca nel report…")
+            ui.input(placeholder="Search in the report...")
             .props("dense clearable")
             .classes("w-72")
         )
@@ -309,7 +307,7 @@ def report_viewer(definition_id: int) -> None:
                 state_holder["grid"] = grid
                 with ui.row().classes("gap-2 mt-2"):
                     ui.button(
-                        "Esporta CSV",
+                        "Export CSV",
                         icon="download",
                         on_click=lambda: grid.run_grid_method("exportDataAsCsv"),
                     ).props("outline size=sm")
@@ -320,7 +318,7 @@ def report_viewer(definition_id: int) -> None:
                     engine, metadata, report, _param_values()
                 )
             except Exception as exc:
-                ui.notify(f"Errore query: {exc}", type="negative")
+                ui.notify(f"Query error: {exc}", type="negative")
                 return
             state_holder["fields"] = fields
             state_holder["rows"] = rows
@@ -336,33 +334,33 @@ def report_viewer(definition_id: int) -> None:
         search.on_value_change(lambda e: apply_search(e.value))
 
         with ui.row().classes("gap-2"):
-            ui.button("Carica dati", icon="play_arrow", on_click=load).props(
+            ui.button("Load data", icon="play_arrow", on_click=load).props(
                 "color=primary"
             )
             ui.button(
-                "Indietro",
+                "Back",
                 icon="arrow_back",
                 on_click=lambda: ui.navigate.to("/reports"),
             ).props("flat")
 
         # --- chart builder -------------------------------------------------
         ui.separator()
-        ui.label("Grafico (summary / pivot)").classes("text-lg font-semibold")
+        ui.label("Chart (summary / pivot)").classes("text-lg font-semibold")
         with ui.row().classes("items-end gap-2 flex-wrap"):
             chart_type = ui.select(
-                {"bar": "Colonna", "line": "Linea / time-series", "pie": "Torta"},
+                {"bar": "Column", "line": "Line / time-series", "pie": "Pie"},
                 value="bar",
-                label="Tipo",
+                label="Type",
             ).classes("w-40")
-            cat_sel = ui.select([], label="Categoria").classes("w-40")
-            ser_sel = ui.select([], label="Serie (opz.)").classes("w-40")
-            val_sel = ui.select([], label="Valore").classes("w-40")
+            cat_sel = ui.select([], label="Category").classes("w-40")
+            ser_sel = ui.select([], label="Series (opt.)").classes("w-40")
+            val_sel = ui.select([], label="Value").classes("w-40")
             agg_sel = ui.select(
                 ["sum", "avg", "count", "min", "max"], value="sum", label="Aggreg."
             ).classes("w-32")
-            ui.button("Genera", icon="insights", on_click=lambda: build_chart()).props(
-                "color=primary"
-            )
+            ui.button(
+                "Generate", icon="insights", on_click=lambda: build_chart()
+            ).props("color=primary")
 
         def _refresh_chart_fields(fields: list[str]) -> None:
             for sel in (cat_sel, ser_sel, val_sel):
@@ -375,7 +373,7 @@ def report_viewer(definition_id: int) -> None:
             )
             if not rows or not cat_sel.value or not val_sel.value:
                 ui.notify(
-                    "Scegli categoria e valore, poi carica i dati.", type="warning"
+                    "Choose a category and a value, then load the data.", type="warning"
                 )
                 return
             summary = aggregate_summary(

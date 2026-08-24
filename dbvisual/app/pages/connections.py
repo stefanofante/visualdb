@@ -29,7 +29,7 @@ _DIALECTS = {
     "Oracle": "oracle",
     "SQLite": "sqlite",
     "DuckDB": "duckdb",
-    "SQLite cifrato (SQLCipher)": "sqlcipher",
+    "SQLite encrypted (SQLCipher)": "sqlcipher",
 }
 
 # Dialects that use a file passphrase (encryption at rest).
@@ -62,11 +62,11 @@ def _connection_dialog(on_saved) -> None:
     fields: dict[str, Any] = {}
 
     with ui.dialog() as dialog, ui.card().classes("w-[520px] gap-3"):
-        ui.label("Nuova connessione").classes("text-lg font-semibold")
+        ui.label("New connection").classes("text-lg font-semibold")
 
-        fields["name"] = ui.input("Nome").classes("w-full")
+        fields["name"] = ui.input("Name").classes("w-full")
         fields["dialect"] = ui.select(
-            {v: k for k, v in _DIALECTS.items()}, label="Dialetto", value="postgresql"
+            {v: k for k, v in _DIALECTS.items()}, label="Dialect", value="postgresql"
         ).classes("w-full")
         fields["host"] = ui.input("Host").classes("w-full")
         fields["port"] = ui.number("Port", format="%d").classes("w-full")
@@ -74,10 +74,10 @@ def _connection_dialog(on_saved) -> None:
         fields["username"] = ui.input("Username").classes("w-full")
         fields["password"] = ui.input("Password", password=True).classes("w-full")
         fields["passphrase"] = ui.input(
-            "Passphrase file cifrato (SQLCipher / DuckDB)", password=True
+            "Encrypted file passphrase (SQLCipher / DuckDB)", password=True
         ).classes("w-full")
         enc_note = ui.label(
-            "Passphrase usata solo per DB file cifrati a riposo; salvata come segreto."
+            "Passphrase used only for encrypted DB files at rest; stored as a secret."
         ).classes("text-xs text-gray-500")
 
         def _toggle_enc() -> None:
@@ -108,20 +108,20 @@ def _connection_dialog(on_saved) -> None:
                 engine = build_engine(_to_config(data, password))
                 ok = test_connection(engine)
             except Exception as exc:  # driver missing / bad params
-                result.set_text(f"Errore: {exc}")
+                result.set_text(f"Error: {exc}")
                 result.classes(replace="text-sm text-red-600")
                 return
             if ok:
-                result.set_text("Connessione riuscita.")
+                result.set_text("Connection succeeded.")
                 result.classes(replace="text-sm text-green-600")
             else:
-                result.set_text("Connessione fallita.")
+                result.set_text("Connection failed.")
                 result.classes(replace="text-sm text-red-600")
 
         def on_save() -> None:
             data, password = collect()
             if not data["name"]:
-                result.set_text("Il nome è obbligatorio.")
+                result.set_text("Name is required.")
                 result.classes(replace="text-sm text-red-600")
                 return
             conn_id = state.store.create_connection(
@@ -140,9 +140,9 @@ def _connection_dialog(on_saved) -> None:
             on_saved()
 
         with ui.row().classes("w-full justify-end gap-2"):
-            ui.button("Testa", on_click=on_test).props("outline")
-            ui.button("Salva", on_click=on_save).props("color=primary")
-            ui.button("Annulla", on_click=dialog.close).props("flat")
+            ui.button("Test", on_click=on_test).props("outline")
+            ui.button("Save", on_click=on_save).props("color=primary")
+            ui.button("Cancel", on_click=dialog.close).props("flat")
 
     dialog.open()
 
@@ -173,17 +173,15 @@ def _schema_dialog(connection: dict[str, Any]) -> None:
             tables = list_tables(metadata)
         except Exception as exc:
             with body:
-                ui.label(f"Impossibile leggere lo schema: {exc}").classes(
-                    "text-red-600"
-                )
+                ui.label(f"Unable to read the schema: {exc}").classes("text-red-600")
             with ui.row().classes("w-full justify-end"):
-                ui.button("Chiudi", on_click=dialog.close).props("flat")
+                ui.button("Close", on_click=dialog.close).props("flat")
             dialog.open()
             return
 
         with body:
             if not tables:
-                ui.label("Nessuna tabella trovata.")
+                ui.label("No tables found.")
             for table in tables:
                 columns = get_columns(metadata, table)
                 fks = detect_foreign_keys(metadata, table)
@@ -191,8 +189,8 @@ def _schema_dialog(connection: dict[str, Any]) -> None:
                     ui.aggrid(
                         {
                             "columnDefs": [
-                                {"headerName": "Colonna", "field": "name"},
-                                {"headerName": "Tipo", "field": "type"},
+                                {"headerName": "Column", "field": "name"},
+                                {"headerName": "Type", "field": "type"},
                                 {"headerName": "Nullable", "field": "nullable"},
                                 {"headerName": "PK", "field": "pk"},
                             ],
@@ -215,7 +213,7 @@ def _schema_dialog(connection: dict[str, Any]) -> None:
                             ).classes("text-sm font-mono")
 
         with ui.row().classes("w-full justify-end"):
-            ui.button("Chiudi", on_click=dialog.close).props("flat")
+            ui.button("Close", on_click=dialog.close).props("flat")
 
     dialog.open()
 
@@ -233,9 +231,9 @@ def connections_page() -> None:
 
     with frame(active="/connections"):
         with ui.row().classes("w-full items-center justify-between"):
-            ui.label("Connessioni").classes("text-2xl font-bold")
+            ui.label("Connections").classes("text-2xl font-bold")
             ui.button(
-                "Nuova connessione",
+                "New connection",
                 icon="add",
                 on_click=lambda: _connection_dialog(refresh),
             ).props("color=primary")
@@ -246,19 +244,19 @@ def connections_page() -> None:
             with ui.row().classes("w-full items-center gap-2"):
                 ui.icon("badge")
                 email = ui.input(
-                    "Identità corrente (email per RLS PostgreSQL)",
+                    "Current identity (email for PostgreSQL RLS)",
                     value=get_identity(),
                 ).classes("grow")
 
                 def _save_identity() -> None:
                     set_identity(email.value or "")
-                    ui.notify("Identità aggiornata.", type="positive")
+                    ui.notify("Identity updated.", type="positive")
 
-                ui.button("Salva identità", on_click=_save_identity).props("outline")
+                ui.button("Save identity", on_click=_save_identity).props("outline")
             ui.label(
-                "La RLS è delegata a PostgreSQL (policy SQL dell'utente). La connessione "
-                "deve usare un ruolo NON superuser e NON owner della tabella, altrimenti "
-                "la RLS viene bypassata."
+                "RLS is delegated to PostgreSQL (the user's SQL policies). The connection "
+                "must use a role that is NOT superuser and NOT the table owner, otherwise "
+                "RLS is bypassed."
             ).classes("text-xs text-amber-700")
 
         container = ui.column().classes("w-full gap-2")
@@ -268,7 +266,7 @@ def connections_page() -> None:
             rows = state.store.list_connections()
             with container:
                 if not rows:
-                    ui.label("Nessuna connessione salvata.").classes("text-gray-500")
+                    ui.label("No saved connections.").classes("text-gray-500")
                     return
                 for conn in rows:
                     with ui.card().classes("w-full"):
@@ -283,7 +281,7 @@ def connections_page() -> None:
                                 ui.label(detail).classes("text-sm text-gray-500")
                             with ui.row().classes("gap-1"):
                                 ui.button(
-                                    "Sfoglia schema",
+                                    "Browse schema",
                                     icon="account_tree",
                                     on_click=lambda c=conn: _schema_dialog(c),
                                 ).props("outline size=sm")

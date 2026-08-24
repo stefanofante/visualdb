@@ -24,8 +24,8 @@ def open_webhooks_dialog(definition_id: int, table_name: str) -> None:
     with ui.dialog() as dialog, ui.card().classes("w-[640px] gap-3"):
         ui.label("Webhook").classes("text-lg font-semibold")
         ui.label(
-            "Invio HTTP POST (JSON) su create/update/delete verso un URL esterno. "
-            "L'URL è trattato come segreto e non è salvato in chiaro."
+            "HTTP POST (JSON) on create/update/delete to an external URL. "
+            "The URL is treated as a secret and is not stored in clear text."
         ).classes("text-sm text-gray-500")
         listing = ui.column().classes("w-full gap-2")
 
@@ -34,7 +34,7 @@ def open_webhooks_dialog(definition_id: int, table_name: str) -> None:
             hooks = state.store.list_webhooks(definition_id)
             with listing:
                 if not hooks:
-                    ui.label("Nessun webhook.").classes("text-gray-500")
+                    ui.label("No webhooks.").classes("text-gray-500")
                 for wh in hooks:
                     with ui.row().classes("w-full items-center justify-between"):
                         ui.label(f"{wh['name']} · {', '.join(wh['events'])}").classes(
@@ -57,10 +57,10 @@ def open_webhooks_dialog(definition_id: int, table_name: str) -> None:
             _editor(definition_id, table_name, wh, refresh)
 
         with ui.row().classes("w-full justify-between"):
-            ui.button(
-                "Aggiungi webhook", icon="add", on_click=lambda: _edit(None)
-            ).props("color=primary")
-            ui.button("Chiudi", on_click=dialog.close).props("flat")
+            ui.button("Add webhook", icon="add", on_click=lambda: _edit(None)).props(
+                "color=primary"
+            )
+            ui.button("Close", on_click=dialog.close).props("flat")
         refresh()
     dialog.open()
 
@@ -73,14 +73,14 @@ def _editor(
     existing_url = state.secrets.get_secret(webhook_secret_key(wh["id"])) if wh else ""
 
     with ui.dialog() as dlg, ui.card().classes("w-[560px] gap-3"):
-        ui.label("Nuovo webhook" if wh is None else "Modifica webhook").classes(
+        ui.label("New webhook" if wh is None else "Edit webhook").classes(
             "text-lg font-semibold"
         )
-        name = ui.input("Nome", value=(wh or {}).get("name", "")).classes("w-full")
-        url = ui.input(
-            "URL (segreto)", value=existing_url or "", password=True
-        ).classes("w-full")
-        ui.label("Eventi").classes("text-sm font-medium")
+        name = ui.input("Name", value=(wh or {}).get("name", "")).classes("w-full")
+        url = ui.input("URL (secret)", value=existing_url or "", password=True).classes(
+            "w-full"
+        )
+        ui.label("Events").classes("text-sm font-medium")
         selected = set((wh or {}).get("events", ["created"]))
         boxes = {e: ui.checkbox(e, value=e in selected) for e in _EVENTS}
         mode = ui.toggle(
@@ -88,7 +88,7 @@ def _editor(
             value=(wh or {}).get("body_mode", "default"),
         )
         template = ui.textarea(
-            "Template body (placeholder {{campo}}, {{campo:formatted}}, {{campo:bare}})",
+            "Body template (placeholders {{field}}, {{field:formatted}}, {{field:bare}})",
             value=(wh or {}).get("body_template", "") or "",
         ).classes("w-full")
 
@@ -96,19 +96,19 @@ def _editor(
             return [e for e, b in boxes.items() if b.value]
 
         def test() -> None:
-            sample = {"id": 1, "example": "valore", table_name: "esempio"}
+            sample = {"id": 1, "example": "value", table_name: "example"}
             body = render_body(sample, mode.value, template.value or None)
             if not url.value:
-                ui.notify("Inserisci un URL da testare.", type="warning")
+                ui.notify("Enter a URL to test.", type="warning")
                 return
             threading.Thread(
                 target=lambda: _safe_post(url.value, body), daemon=True
             ).start()
-            ui.notify("Invio di prova avviato.", type="info")
+            ui.notify("Test send started.", type="info")
 
         def save() -> None:
             if not name.value or not _events():
-                ui.notify("Nome ed almeno un evento sono obbligatori.", type="negative")
+                ui.notify("Name and at least one event are required.", type="negative")
                 return
             if wh is None:
                 new_id = state.store.create_webhook(
@@ -135,9 +135,9 @@ def _editor(
             on_saved()
 
         with ui.row().classes("w-full justify-end gap-2"):
-            ui.button("Testa", on_click=test).props("outline")
-            ui.button("Salva", on_click=save).props("color=primary")
-            ui.button("Annulla", on_click=dlg.close).props("flat")
+            ui.button("Test", on_click=test).props("outline")
+            ui.button("Save", on_click=save).props("color=primary")
+            ui.button("Cancel", on_click=dlg.close).props("flat")
     dlg.open()
 
 

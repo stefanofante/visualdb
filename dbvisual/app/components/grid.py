@@ -161,31 +161,33 @@ class SheetGrid:
         ui.html(_STYLE)
         with ui.row().classes("w-full items-center gap-2"):
             self._search = (
-                ui.input(placeholder="Cerca…").props("dense clearable").classes("w-64")
+                ui.input(placeholder="Search...")
+                .props("dense clearable")
+                .classes("w-64")
             )
             self._search.on_value_change(lambda e: self._on_search(e.value))
             ui.button(icon="add", on_click=self.add_row).props("flat dense").tooltip(
-                "Aggiungi riga"
+                "Add row"
             )
             ui.button(icon="delete", on_click=self.delete_selected).props(
                 "flat dense color=negative"
-            ).tooltip("Elimina selezionate")
+            ).tooltip("Delete selected")
             ui.button(icon="content_copy", on_click=self.copy_tsv).props(
                 "flat dense"
-            ).tooltip("Copia (TSV)")
+            ).tooltip("Copy (TSV)")
             ui.button(icon="content_paste", on_click=self._paste_dialog).props(
                 "flat dense"
-            ).tooltip("Incolla da Excel (TSV)")
+            ).tooltip("Paste from Excel (TSV)")
             ui.button(icon="download", on_click=self.export_csv).props(
                 "flat dense"
-            ).tooltip("Esporta CSV")
+            ).tooltip("Export CSV")
             if self.attachment_fields and self._attachments is not None:
-                ui.button(
-                    icon="attach_file", on_click=self._attachments_dialog
-                ).props("flat dense").tooltip("Allegati (riga selezionata)")
+                ui.button(icon="attach_file", on_click=self._attachments_dialog).props(
+                    "flat dense"
+                ).tooltip("Attachments (selected row)")
             groupable = {c.field: c.header for c in self.view.columns}
             self._group = (
-                ui.select(groupable, label="Raggruppa per", multiple=True)
+                ui.select(groupable, label="Group by", multiple=True)
                 .props("dense outlined")
                 .classes("w-56")
             )
@@ -243,7 +245,7 @@ class SheetGrid:
         selected = await self.grid.get_selected_rows()
         ids = {r["__id__"] for r in selected if "__id__" in r}
         if not ids:
-            ui.notify("Nessuna riga selezionata.", type="warning")
+            ui.notify("No row selected.", type="warning")
             return
         for rid in ids:
             if rid in self._existing_ids:
@@ -306,14 +308,20 @@ class SheetGrid:
                 row[field] = remove_attachment(
                     self._attachments, self._app_id, key, row.get(field), meta["id"]
                 )
-                self._dirty_ids.add(row["__id__"]) if row["__id__"] in self._existing_ids else None
+                self._dirty_ids.add(row["__id__"]) if row[
+                    "__id__"
+                ] in self._existing_ids else None
                 self.grid.update()
                 render()
 
             def _on_upload(event: Any) -> None:
                 row[field] = add_attachment(
-                    self._attachments, self._app_id, key, row.get(field),
-                    event.name, event.content.read(),
+                    self._attachments,
+                    self._app_id,
+                    key,
+                    row.get(field),
+                    event.name,
+                    event.content.read(),
                     getattr(event, "type", "application/octet-stream"),
                 )
                 if row["__id__"] in self._existing_ids:
@@ -323,7 +331,9 @@ class SheetGrid:
 
             render()
             ui.upload(on_upload=_on_upload, auto_upload=True).classes("w-full")
-            ui.label(attachment_summary(row.get(field))).classes("text-xs text-gray-500")
+            ui.label(attachment_summary(row.get(field))).classes(
+                "text-xs text-gray-500"
+            )
             ui.button("Close", on_click=dialog.close).props("flat")
         dialog.open()
 
@@ -432,7 +442,7 @@ class SheetGrid:
     async def copy_tsv(self) -> None:
         """Copy the whole grid to the clipboard as Excel-friendly TSV."""
         await ui.clipboard.write(self.to_tsv())
-        ui.notify("Copiato negli appunti (TSV).", type="positive")
+        ui.notify("Copied to clipboard (TSV).", type="positive")
 
     def to_tsv(self) -> str:
         """Serialize the visible columns and rows as tab-separated values."""
@@ -471,20 +481,20 @@ class SheetGrid:
 
     def _paste_dialog(self) -> None:
         with ui.dialog() as dialog, ui.card().classes("w-[560px] gap-3"):
-            ui.label("Incolla da Excel (TSV)").classes("text-lg font-semibold")
+            ui.label("Paste from Excel (TSV)").classes("text-lg font-semibold")
             ui.label(
-                "Incolla le celle copiate da Excel. Le colonne editabili vengono "
-                "riempite in ordine; le nuove righe saranno inserite al salvataggio."
+                "Paste the cells copied from Excel. Editable columns are filled in "
+                "order; new rows will be inserted on save."
             ).classes("text-sm text-gray-500")
-            area = ui.textarea(placeholder="col1\tcol2\t…").classes("w-full h-40")
-            header = ui.checkbox("La prima riga è un'intestazione", value=True)
+            area = ui.textarea(placeholder="col1\tcol2\t...").classes("w-full h-40")
+            header = ui.checkbox("First row is a header", value=True)
 
             def do_import() -> None:
                 n = self.import_tsv(area.value or "", has_header=header.value)
                 dialog.close()
-                ui.notify(f"Aggiunte {n} righe.", type="positive")
+                ui.notify(f"Added {n} rows.", type="positive")
 
             with ui.row().classes("w-full justify-end gap-2"):
-                ui.button("Importa", on_click=do_import).props("color=primary")
-                ui.button("Annulla", on_click=dialog.close).props("flat")
+                ui.button("Import", on_click=do_import).props("color=primary")
+                ui.button("Cancel", on_click=dialog.close).props("flat")
         dialog.open()

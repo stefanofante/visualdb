@@ -53,18 +53,18 @@ def _create_dialog(on_saved) -> None:
     conns = state.store.list_connections()
 
     with ui.dialog() as dialog, ui.card().classes("w-[620px] gap-3"):
-        ui.label("Nuovo form").classes("text-lg font-semibold")
-        name = ui.input("Nome form").classes("w-full")
+        ui.label("New form").classes("text-lg font-semibold")
+        name = ui.input("Form name").classes("w-full")
         app_select = ui.select(
             {a["id"]: a["name"] for a in apps},
-            label="Applicazione",
+            label="Application",
             value=apps[0]["id"] if apps else None,
         ).classes("w-full")
-        new_app = ui.input("…oppure nuova applicazione").classes("w-full")
+        new_app = ui.input("...or new application").classes("w-full")
         conn_select = ui.select(
-            {c["id"]: c["name"] for c in conns}, label="Connessione"
+            {c["id"]: c["name"] for c in conns}, label="Connection"
         ).classes("w-full")
-        rls_box = ui.checkbox("Row-level security (solo PostgreSQL)")
+        rls_box = ui.checkbox("Row-level security (PostgreSQL only)")
         rls_box.set_visibility(False)
         schema_box = ui.column().classes("w-full gap-3")
         result = ui.label("").classes("text-sm")
@@ -95,19 +95,17 @@ def _create_dialog(on_saved) -> None:
                 _engine, metadata = resolve_engine(conn, password, refresh=True)
                 tables = list_tables(metadata)
             except Exception as exc:
-                result.set_text(f"Errore schema: {exc}")
+                result.set_text(f"Schema error: {exc}")
                 result.classes(replace="text-sm text-red-600")
                 return
             ctx["metadata"] = metadata
             with schema_box:
-                main_select = ui.select(tables, label="Tabella principale").classes(
-                    "w-full"
-                )
-                cols_select = ui.select([], label="Colonne", multiple=True).classes(
+                main_select = ui.select(tables, label="Main table").classes("w-full")
+                cols_select = ui.select([], label="Columns", multiple=True).classes(
                     "w-full"
                 )
                 rel_select = ui.select(
-                    [], label="Tabelle correlate (sola lettura)", multiple=True
+                    [], label="Related tables (read-only)", multiple=True
                 ).classes("w-full")
                 ctx.update(main=main_select, cols=cols_select, rel=rel_select)
 
@@ -132,7 +130,7 @@ def _create_dialog(on_saved) -> None:
             metadata = ctx.get("metadata")
             main = ctx.get("main")
             if not name.value or metadata is None or main is None or not main.value:
-                result.set_text("Compila nome, schema e tabella principale.")
+                result.set_text("Fill in name, schema and main table.")
                 result.classes(replace="text-sm text-red-600")
                 return
             app_id = int(app_select.value) if app_select.value else None
@@ -162,8 +160,8 @@ def _create_dialog(on_saved) -> None:
             on_saved()
 
         with ui.row().classes("w-full justify-end gap-2"):
-            ui.button("Salva", on_click=save).props("color=primary")
-            ui.button("Annulla", on_click=dialog.close).props("flat")
+            ui.button("Save", on_click=save).props("color=primary")
+            ui.button("Cancel", on_click=dialog.close).props("flat")
     dialog.open()
 
 
@@ -174,9 +172,9 @@ def forms_page() -> None:
 
     with frame(active="/forms"):
         with ui.row().classes("w-full items-center justify-between"):
-            ui.label("Form").classes("text-2xl font-bold")
+            ui.label("Forms").classes("text-2xl font-bold")
             ui.button(
-                "Nuovo form", icon="add", on_click=lambda: _create_dialog(refresh)
+                "New form", icon="add", on_click=lambda: _create_dialog(refresh)
             ).props("color=primary")
 
         container = ui.column().classes("w-full gap-2")
@@ -187,7 +185,7 @@ def forms_page() -> None:
             forms = [d for d in state.store.list_definitions() if d["kind"] == "form"]
             with container:
                 if not forms:
-                    ui.label("Nessun form salvato.").classes("text-gray-500")
+                    ui.label("No saved forms.").classes("text-gray-500")
                     return
                 for d in forms:
                     with ui.card().classes("w-full"):
@@ -199,7 +197,7 @@ def forms_page() -> None:
                                 )
                             with ui.row().classes("gap-1"):
                                 ui.button(
-                                    "Apri",
+                                    "Open",
                                     icon="open_in_new",
                                     on_click=lambda d=d: ui.navigate.to(
                                         f"/forms/{d['id']}"
@@ -224,19 +222,19 @@ def form_editor(definition_id: int) -> None:
     with frame(active="/forms"):
         definition = state.store.get_definition(definition_id)
         if definition is None or definition["kind"] != "form":
-            ui.label("Form non trovato.").classes("text-red-600")
+            ui.label("Form not found.").classes("text-red-600")
             return
         form_spec = FormSpec.from_json(definition["queryspec_json"])
         conn = state.store.get_connection(form_spec.connection_id)
         if conn is None:
-            ui.label("Connessione non disponibile.").classes("text-red-600")
+            ui.label("Connection not available.").classes("text-red-600")
             return
 
         password = state.secrets.get_password(conn["id"])
         session_settings = rls_session_settings(conn, form_spec.rls, get_identity())
         if form_spec.rls and rls_available(conn) and not get_identity():
             ui.notify(
-                "RLS attiva ma nessuna identità impostata: le policy non filtreranno nulla.",
+                "RLS enabled but no identity set: the policies will not filter anything.",
                 type="warning",
             )
         try:
@@ -246,7 +244,7 @@ def form_editor(definition_id: int) -> None:
             view = build_view(form_spec.spec, metadata)
             _f, records = load_rows(engine, metadata, form_spec.spec)
         except Exception as exc:
-            ui.label(f"Impossibile aprire il form: {exc}").classes("text-red-600")
+            ui.label(f"Unable to open the form: {exc}").classes("text-red-600")
             return
 
         table = get_table(metadata, form_spec.spec.main_table)
@@ -285,7 +283,7 @@ def form_editor(definition_id: int) -> None:
             total = len(records)
             shown = 0 if st["is_new"] else st["index"] + 1
             pos.set_text(
-                f"Record {shown} di {total}" + (" (nuovo)" if st["is_new"] else "")
+                f"Record {shown} of {total}" + (" (new)" if st["is_new"] else "")
             )
             with fields_box:
                 for fc in form_spec.fields:
@@ -327,7 +325,7 @@ def form_editor(definition_id: int) -> None:
             record = gather()
             errs = [m for fw in fields.values() for m in fw.validate()]
             if errs:
-                ui.notify("Correggi gli errori evidenziati.", type="negative")
+                ui.notify("Fix the highlighted errors.", type="negative")
                 return
             violations = check_submit_rules(form_spec.submit_rules, record)
             if violations:
@@ -345,15 +343,15 @@ def form_editor(definition_id: int) -> None:
             except ConflictError:
                 reload()
                 ui.notify(
-                    "Il record è stato modificato da altri: ricaricato, riprova.",
+                    "The record was modified by someone else: reloaded, retry.",
                     type="warning",
                 )
                 return
             except Exception as exc:
-                ui.notify(f"Salvataggio fallito: {exc}", type="negative")
+                ui.notify(f"Save failed: {exc}", type="negative")
                 return
             reload()
-            ui.notify("Record salvato.", type="positive")
+            ui.notify("Record saved.", type="positive")
 
         def delete() -> None:
             if st["is_new"] or not records:
@@ -362,14 +360,14 @@ def form_editor(definition_id: int) -> None:
             delete_form_record(engine, view, table, record)
             attachments.delete_record(definition["app_id"], _record_key(view, record))
             reload()
-            ui.notify("Record eliminato.", type="positive")
+            ui.notify("Record deleted.", type="positive")
 
         with ui.row().classes("items-center gap-2"):
             ui.button(icon="chevron_left", on_click=lambda: go(-1)).props("flat")
             ui.button(icon="chevron_right", on_click=lambda: go(1)).props("flat")
-            ui.button("Nuovo", icon="add", on_click=new_record).props("outline")
-            ui.button("Salva", icon="save", on_click=save).props("color=primary")
-            ui.button("Elimina", icon="delete", on_click=delete).props(
+            ui.button("New", icon="add", on_click=new_record).props("outline")
+            ui.button("Save", icon="save", on_click=save).props("color=primary")
+            ui.button("Delete", icon="delete", on_click=delete).props(
                 "flat color=negative"
             )
             ui.button(
@@ -380,7 +378,7 @@ def form_editor(definition_id: int) -> None:
                 ),
             ).props("flat")
             ui.button(
-                "Indietro", icon="arrow_back", on_click=lambda: ui.navigate.to("/forms")
+                "Back", icon="arrow_back", on_click=lambda: ui.navigate.to("/forms")
             ).props("flat")
 
         render()

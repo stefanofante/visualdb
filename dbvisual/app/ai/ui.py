@@ -7,7 +7,7 @@ human review — it is never executed automatically.
 
 from __future__ import annotations
 
-from typing import Callable
+from collections.abc import Callable
 
 from nicegui import ui
 
@@ -28,9 +28,9 @@ from dbvisual.app.state import get_state
 from dbvisual.core.introspect import get_columns, list_tables
 
 _PRIVACY = (
-    "Usando l'AI, la struttura del DB (nomi di tabelle e colonne) e il testo della "
-    "richiesta vengono inviati al provider cloud scelto. Costo per token a carico "
-    "dell'utente. Funzione disattivata di default."
+    "When using the AI, the DB structure (table and column names) and the request "
+    "text are sent to the chosen cloud provider. Per-token cost is borne by the "
+    "user. Feature disabled by default."
 )
 
 
@@ -40,17 +40,17 @@ def ai_settings_dialog() -> None:
     cfg = get_ai_config()
 
     with ui.dialog() as dialog, ui.card().classes("w-[560px] gap-3"):
-        ui.label("Impostazioni assistente AI").classes("text-lg font-semibold")
+        ui.label("AI assistant settings").classes("text-lg font-semibold")
         ui.label(_PRIVACY).classes("text-xs text-amber-700")
-        enabled = ui.switch("Abilita assistente AI", value=cfg.enabled)
+        enabled = ui.switch("Enable AI assistant", value=cfg.enabled)
         provider = ui.select(
             PROVIDER_LABELS, label="Provider", value=cfg.provider
         ).classes("w-full")
         model = ui.input(
-            "Modello", value=cfg.model or DEFAULT_MODELS.get(cfg.provider, "")
+            "Model", value=cfg.model or DEFAULT_MODELS.get(cfg.provider, "")
         ).classes("w-full")
         api_key = ui.input(
-            "API key (segreta)",
+            "API key (secret)",
             value=get_api_key(state.secrets, cfg.provider) or "",
             password=True,
         ).classes("w-full")
@@ -72,11 +72,11 @@ def ai_settings_dialog() -> None:
             if api_key.value:
                 save_api_key(state.secrets, provider.value, api_key.value)
             dialog.close()
-            ui.notify("Impostazioni AI salvate.", type="positive")
+            ui.notify("AI settings saved.", type="positive")
 
         with ui.row().classes("w-full justify-end gap-2"):
-            ui.button("Salva", on_click=save).props("color=primary")
-            ui.button("Annulla", on_click=dialog.close).props("flat")
+            ui.button("Save", on_click=save).props("color=primary")
+            ui.button("Cancel", on_click=dialog.close).props("flat")
     dialog.open()
 
 
@@ -85,25 +85,25 @@ def ai_generate_dialog(connection_id: int, on_sql: Callable[[str], None]) -> Non
     state = get_state()
     cfg = get_ai_config()
     if not cfg.enabled:
-        ui.notify("Assistente AI disattivato (Impostazioni AI).", type="warning")
+        ui.notify("AI assistant disabled (AI settings).", type="warning")
         return
     key = get_api_key(state.secrets, cfg.provider)
     if not key:
-        ui.notify("Nessuna API key configurata per il provider.", type="warning")
+        ui.notify("No API key configured for the provider.", type="warning")
         return
 
     with ui.dialog() as dialog, ui.card().classes("w-[560px] gap-3"):
-        ui.label("Genera SQL con AI").classes("text-lg font-semibold")
+        ui.label("Generate SQL with AI").classes("text-lg font-semibold")
         ui.label(_PRIVACY).classes("text-xs text-amber-700")
         prompt = ui.textarea(
-            "Descrivi in linguaggio naturale cosa vuoi estrarre"
+            "Describe in natural language what you want to extract"
         ).classes("w-full")
         preview = ui.label("").classes("text-xs text-red-600")
 
         def generate() -> None:
             conn = state.store.get_connection(connection_id)
             if conn is None:
-                preview.set_text("Connessione non trovata.")
+                preview.set_text("Connection not found.")
                 return
             password = state.secrets.get_password(connection_id)
             try:
@@ -116,15 +116,15 @@ def ai_generate_dialog(connection_id: int, on_sql: Callable[[str], None]) -> Non
                 sql = provider.generate_sql(prompt.value or "", schema)
                 ensure_readonly(sql)  # reject any non-SELECT before review
             except Exception as exc:
-                preview.set_text(f"Errore: {exc}")
+                preview.set_text(f"Error: {exc}")
                 return
             on_sql(sql)
             dialog.close()
-            ui.notify("SQL generato: rivedilo prima di eseguire.", type="positive")
+            ui.notify("SQL generated: review it before running.", type="positive")
 
         with ui.row().classes("w-full justify-end gap-2"):
-            ui.button("Genera", icon="auto_awesome", on_click=generate).props(
+            ui.button("Generate", icon="auto_awesome", on_click=generate).props(
                 "color=primary"
             )
-            ui.button("Annulla", on_click=dialog.close).props("flat")
+            ui.button("Cancel", on_click=dialog.close).props("flat")
     dialog.open()

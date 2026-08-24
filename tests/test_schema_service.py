@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import Engine, MetaData
+from sqlalchemy import Engine
 
 from dbvisual.app.schema_service import (
     csv_create_table_ddl,
@@ -67,8 +67,13 @@ def test_generate_ddl_via_ai_mock() -> None:
         return {"choices": [{"message": {"content": "CREATE TABLE t(a INT)"}}]}
 
     ddl = generate_ddl_via_ai(
-        "openai", "KEY", "gpt", "a table t with column a",
-        {"existing": ["x"]}, "sqlite", http=fake_http,
+        "openai",
+        "KEY",
+        "gpt",
+        "a table t with column a",
+        {"existing": ["x"]},
+        "sqlite",
+        http=fake_http,
     )
     assert ddl == "CREATE TABLE t(a INT)"
     # DDL system prompt must permit DDL (not the read-only SELECT prompt).

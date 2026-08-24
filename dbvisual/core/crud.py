@@ -8,8 +8,9 @@ transaction and rolls back on any error.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable, Literal
+from typing import Any, Literal
 
 from sqlalchemy import Connection, Engine, Table, and_, delete, insert, update
 
@@ -112,7 +113,7 @@ def update_record(
         affected = _exec_update(conn, table, pk_values, values, expected)
         if expected is not None and affected == 0:
             raise ConflictError(
-                "Il record è stato modificato da altri: ricarica e riprova."
+                "The record was modified by someone else: reload and retry."
             )
     emit(CrudEvent("updated", table.name, {**pk_values, **values}))
     return affected
@@ -138,7 +139,7 @@ def _apply(conn: Connection, op: Operation) -> Any:
         affected = _exec_update(conn, op.table, op.pk_values, op.values, op.expected)
         if op.expected is not None and affected == 0:
             raise ConflictError(
-                "Il record è stato modificato da altri: ricarica e riprova."
+                "The record was modified by someone else: reload and retry."
             )
         return affected
     if op.kind == "delete":
@@ -153,7 +154,7 @@ def save_master_detail(
     master_op: Operation,
     detail_ops: list[Operation],
     *,
-    link: "Callable[[Any, list[Operation]], None] | None" = None,
+    link: Callable[[Any, list[Operation]], None] | None = None,
 ) -> list[Any]:
     """Execute the master and detail operations in a single transaction.
 

@@ -18,8 +18,10 @@ _APP_NAME = "dbvisual"
 
 def data_dir(data_dir: str | Path | None = None) -> Path:
     """Return the user data directory (where metadata, attachments, vault live)."""
-    base = Path(data_dir) if data_dir is not None else Path(
-        user_data_dir(_APP_NAME, appauthor=False)
+    base = (
+        Path(data_dir)
+        if data_dir is not None
+        else Path(user_data_dir(_APP_NAME, appauthor=False))
     )
     base.mkdir(parents=True, exist_ok=True)
     return base
@@ -40,7 +42,9 @@ def _load(dir_override: str | Path | None = None) -> dict[str, Any]:
     return data if isinstance(data, dict) else {}
 
 
-def get_setting(key: str, default: Any = None, dir_override: str | Path | None = None) -> Any:
+def get_setting(
+    key: str, default: Any = None, dir_override: str | Path | None = None
+) -> Any:
     """Return a persisted setting value (or ``default``)."""
     return _load(dir_override).get(key, default)
 
@@ -60,4 +64,6 @@ def get_startup_mode(dir_override: str | Path | None = None) -> str:
 
 def set_startup_mode(mode: str, dir_override: str | Path | None = None) -> None:
     """Persist the preferred startup mode."""
-    set_setting("startup_mode", mode if mode in ("desktop", "web") else "desktop", dir_override)
+    set_setting(
+        "startup_mode", mode if mode in ("desktop", "web") else "desktop", dir_override
+    )

@@ -10,7 +10,8 @@ from __future__ import annotations
 
 import ast
 import operator
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 # Allowed binary / unary / comparison operators.
 _BIN_OPS: dict[type, Callable[[Any, Any], Any]] = {
@@ -81,16 +82,16 @@ def _eval(node: ast.AST, row: dict[str, Any]) -> Any:
     if isinstance(node, ast.Name):
         if node.id in row:
             return _num(row[node.id])
-        raise FormulaError(f"Colonna sconosciuta: {node.id!r}")
+        raise FormulaError(f"Unknown column: {node.id!r}")
     if isinstance(node, ast.BinOp):
         op = _BIN_OPS.get(type(node.op))
         if op is None:
-            raise FormulaError("Operatore non ammesso.")
+            raise FormulaError("Operator not allowed.")
         return op(_eval(node.left, row), _eval(node.right, row))
     if isinstance(node, ast.UnaryOp):
         unary = _UNARY_OPS.get(type(node.op))
         if unary is None:
-            raise FormulaError("Operatore unario non ammesso.")
+            raise FormulaError("Unary operator not allowed.")
         return unary(_eval(node.operand, row))
     if isinstance(node, ast.BoolOp):
         values = [_eval(v, row) for v in node.values]
@@ -102,7 +103,7 @@ def _eval(node: ast.AST, row: dict[str, Any]) -> Any:
         for op_node, comparator in zip(node.ops, node.comparators):
             cmp = _CMP_OPS.get(type(op_node))
             if cmp is None:
-                raise FormulaError("Confronto non ammesso.")
+                raise FormulaError("Comparison not allowed.")
             right = _eval(comparator, row)
             if not cmp(left, right):
                 return False
@@ -114,14 +115,14 @@ def _eval(node: ast.AST, row: dict[str, Any]) -> Any:
         )
     if isinstance(node, ast.Call):
         if not isinstance(node.func, ast.Name) or node.func.id not in _FUNCS:
-            raise FormulaError("Funzione non ammessa.")
+            raise FormulaError("Function not allowed.")
         if node.keywords:
-            raise FormulaError("Argomenti nominati non ammessi.")
+            raise FormulaError("Keyword arguments not allowed.")
         args = [_eval(a, row) for a in node.args]
         return _FUNCS[node.func.id](*args)
     if isinstance(node, (ast.List, ast.Tuple)):
         return [_eval(e, row) for e in node.elts]
-    raise FormulaError("Espressione non ammessa.")
+    raise FormulaError("Expression not allowed.")
 
 
 def evaluate(expression: str, row: dict[str, Any]) -> Any:
@@ -132,5 +133,5 @@ def evaluate(expression: str, row: dict[str, Any]) -> Any:
     try:
         tree = ast.parse(expression, mode="eval")
     except SyntaxError as exc:
-        raise FormulaError(f"Sintassi non valida: {exc.msg}") from exc
+        raise FormulaError(f"Invalid syntax: {exc.msg}") from exc
     return _eval(tree, row)

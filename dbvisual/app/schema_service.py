@@ -77,5 +77,7 @@ def generate_ddl_via_ai(
     http: HttpClient | None = None,
 ) -> str:
     """Ask the LLM to propose DDL for review (never executed here)."""
-    llm = get_provider(provider, api_key, model, http=http, system=ddl_system_prompt(dialect))
+    llm = get_provider(
+        provider, api_key, model, http=http, system=ddl_system_prompt(dialect)
+    )
     return llm.generate_sql(prompt, schema)

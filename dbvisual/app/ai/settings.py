@@ -100,9 +100,7 @@ def delete_api_key(secrets: SecretStore, provider: str) -> None:
     secrets.delete_secret(api_key_secret_key(provider))
 
 
-def test_provider(
-    provider: str, api_key: str, model: str, http: Any = None
-) -> bool:
+def test_provider(provider: str, api_key: str, model: str, http: Any = None) -> bool:
     """Make a minimal provider call; return ``True`` on success (never logs the key)."""
     from dbvisual.app.ai.provider import get_provider
 
@@ -113,4 +111,3 @@ def test_provider(
         return True
     except Exception:
         return False
-

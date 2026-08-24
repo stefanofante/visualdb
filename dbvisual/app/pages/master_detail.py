@@ -41,7 +41,7 @@ def build_detail_query(
     """Build a detail query-spec with a single FK parameter to the master."""
     suggestion = suggest_detail_fk(metadata, master_table, detail_table)
     if suggestion is None:
-        raise ValueError(f"Nessuna foreign key da {detail_table} verso {master_table}.")
+        raise ValueError(f"No foreign key from {detail_table} to {master_table}.")
     fk_column, _remote = suggestion
     spec = build_queryspec(metadata, detail_table, cols, related)
     param_name = f"master_{fk_column}"
@@ -65,15 +65,15 @@ def _create_dialog(on_saved) -> None:
     conns = state.store.list_connections()
 
     with ui.dialog() as dialog, ui.card().classes("w-[680px] gap-3"):
-        ui.label("Nuovo master-detail").classes("text-lg font-semibold")
-        name = ui.input("Nome").classes("w-full")
+        ui.label("New master-detail").classes("text-lg font-semibold")
+        name = ui.input("Name").classes("w-full")
         app_select = ui.select(
             {a["id"]: a["name"] for a in apps},
-            label="Applicazione",
+            label="Application",
             value=apps[0]["id"] if apps else None,
         ).classes("w-full")
         conn_select = ui.select(
-            {c["id"]: c["name"] for c in conns}, label="Connessione"
+            {c["id"]: c["name"] for c in conns}, label="Connection"
         ).classes("w-full")
         box = ui.column().classes("w-full gap-3")
         result = ui.label("").classes("text-sm")
@@ -92,14 +92,14 @@ def _create_dialog(on_saved) -> None:
                 _e, metadata = resolve_engine(conn, password, refresh=True)
                 tables = list_tables(metadata)
             except Exception as exc:
-                result.set_text(f"Errore schema: {exc}")
+                result.set_text(f"Schema error: {exc}")
                 result.classes(replace="text-sm text-red-600")
                 return
             ctx["metadata"] = metadata
             with box:
-                master_sel = ui.select(tables, label="Tabella master").classes("w-full")
+                master_sel = ui.select(tables, label="Master table").classes("w-full")
                 detail_sel = ui.select(
-                    tables, label="Tabella detail", multiple=True
+                    tables, label="Detail table", multiple=True
                 ).classes("w-full")
                 ctx.update(master=master_sel, details_sel=detail_sel)
 
@@ -110,7 +110,7 @@ def _create_dialog(on_saved) -> None:
             master = ctx.get("master")
             details_sel = ctx.get("details_sel")
             if not name.value or metadata is None or master is None or not master.value:
-                result.set_text("Compila nome, schema e tabella master.")
+                result.set_text("Fill in name, schema and master table.")
                 result.classes(replace="text-sm text-red-600")
                 return
             app_id = int(app_select.value) if app_select.value else None
@@ -145,8 +145,8 @@ def _create_dialog(on_saved) -> None:
             on_saved()
 
         with ui.row().classes("w-full justify-end gap-2"):
-            ui.button("Salva", on_click=save).props("color=primary")
-            ui.button("Annulla", on_click=dialog.close).props("flat")
+            ui.button("Save", on_click=save).props("color=primary")
+            ui.button("Cancel", on_click=dialog.close).props("flat")
     dialog.open()
 
 
@@ -159,7 +159,7 @@ def master_detail_page() -> None:
         with ui.row().classes("w-full items-center justify-between"):
             ui.label("Master-Detail").classes("text-2xl font-bold")
             ui.button(
-                "Nuovo", icon="add", on_click=lambda: _create_dialog(refresh)
+                "New", icon="add", on_click=lambda: _create_dialog(refresh)
             ).props("color=primary")
 
         container = ui.column().classes("w-full gap-2")
@@ -174,7 +174,7 @@ def master_detail_page() -> None:
             ]
             with container:
                 if not items:
-                    ui.label("Nessun master-detail salvato.").classes("text-gray-500")
+                    ui.label("No saved master-detail.").classes("text-gray-500")
                     return
                 for d in items:
                     with ui.card().classes("w-full"):
@@ -186,7 +186,7 @@ def master_detail_page() -> None:
                                 )
                             with ui.row().classes("gap-1"):
                                 ui.button(
-                                    "Apri",
+                                    "Open",
                                     icon="open_in_new",
                                     on_click=lambda d=d: ui.navigate.to(
                                         f"/master-detail/{d['id']}"
@@ -211,12 +211,12 @@ def master_detail_editor(definition_id: int) -> None:
     with frame(active="/master-detail"):
         definition = state.store.get_definition(definition_id)
         if definition is None or definition["kind"] != "master_detail":
-            ui.label("Master-detail non trovato.").classes("text-red-600")
+            ui.label("Master-detail not found.").classes("text-red-600")
             return
         md = MasterDetailSpec.from_json(definition["queryspec_json"])
         conn = state.store.get_connection(md.connection_id)
         if conn is None:
-            ui.label("Connessione non disponibile.").classes("text-red-600")
+            ui.label("Connection not available.").classes("text-red-600")
             return
         password = state.secrets.get_password(conn["id"])
         try:
@@ -225,7 +225,7 @@ def master_detail_editor(definition_id: int) -> None:
             master_table = get_table(metadata, md.master_spec.main_table)
             _f, masters = load_rows(engine, metadata, md.master_spec)
         except Exception as exc:
-            ui.label(f"Impossibile aprire: {exc}").classes("text-red-600")
+            ui.label(f"Unable to open: {exc}").classes("text-red-600")
             return
 
         master_types = {
@@ -266,7 +266,7 @@ def master_detail_editor(definition_id: int) -> None:
             total = len(masters)
             shown = 0 if st["is_new"] else st["index"] + 1
             pos.set_text(
-                f"Master {shown} di {total}" + (" (nuovo)" if st["is_new"] else "")
+                f"Master {shown} of {total}" + (" (new)" if st["is_new"] else "")
             )
             with master_box:
                 for c in master_view.columns:
@@ -331,7 +331,7 @@ def master_detail_editor(definition_id: int) -> None:
                     )
                 )
             if errs:
-                ui.notify("Correggi gli errori di validazione.", type="negative")
+                ui.notify("Fix the validation errors.", type="negative")
                 return
             record = current_master()
             plan = build_save_plan(
@@ -347,23 +347,21 @@ def master_detail_editor(definition_id: int) -> None:
                 execute_save(engine, plan)
             except ConflictError:
                 reload()
-                ui.notify(
-                    "Conflitto di concorrenza: ricaricato, riprova.", type="warning"
-                )
+                ui.notify("Concurrency conflict: reloaded, retry.", type="warning")
                 return
             except Exception as exc:
-                ui.notify(f"Salvataggio annullato (rollback): {exc}", type="negative")
+                ui.notify(f"Save cancelled (rollback): {exc}", type="negative")
                 return
             reload()
-            ui.notify("Master e detail salvati.", type="positive")
+            ui.notify("Master and detail saved.", type="positive")
 
         with ui.row().classes("items-center gap-2"):
             ui.button(icon="chevron_left", on_click=lambda: go(-1)).props("flat")
             ui.button(icon="chevron_right", on_click=lambda: go(1)).props("flat")
-            ui.button("Nuovo master", icon="add", on_click=new_master).props("outline")
-            ui.button("Salva tutto", icon="save", on_click=save).props("color=primary")
+            ui.button("New master", icon="add", on_click=new_master).props("outline")
+            ui.button("Save all", icon="save", on_click=save).props("color=primary")
             ui.button(
-                "Indietro",
+                "Back",
                 icon="arrow_back",
                 on_click=lambda: ui.navigate.to("/master-detail"),
             ).props("flat")

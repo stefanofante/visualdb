@@ -55,24 +55,24 @@ def _create_dialog(on_saved) -> None:
     conns = state.store.list_connections()
 
     with ui.dialog() as dialog, ui.card().classes("w-[620px] gap-3"):
-        ui.label("Nuovo sheet").classes("text-lg font-semibold")
+        ui.label("New sheet").classes("text-lg font-semibold")
 
-        name = ui.input("Nome sheet").classes("w-full")
+        name = ui.input("Sheet name").classes("w-full")
         app_select = ui.select(
             {a["id"]: a["name"] for a in apps},
-            label="Applicazione",
+            label="Application",
             value=apps[0]["id"] if apps else None,
         ).classes("w-full")
-        new_app = ui.input("…oppure nuova applicazione").classes("w-full")
+        new_app = ui.input("...or new application").classes("w-full")
 
         conn_select = ui.select(
-            {c["id"]: c["name"] for c in conns}, label="Connessione"
+            {c["id"]: c["name"] for c in conns}, label="Connection"
         ).classes("w-full")
 
-        rls_box = ui.checkbox("Row-level security (solo PostgreSQL)").classes("w-full")
+        rls_box = ui.checkbox("Row-level security (PostgreSQL only)").classes("w-full")
         rls_note = ui.label(
-            "La connessione deve usare un ruolo Postgres NON superuser e NON owner "
-            "della tabella, altrimenti la RLS viene bypassata."
+            "The connection must use a Postgres role that is NOT superuser and NOT owner "
+            "of the table, otherwise RLS is bypassed."
         ).classes("text-xs text-amber-700")
         rls_box.set_visibility(False)
         rls_note.set_visibility(False)
@@ -99,33 +99,31 @@ def _create_dialog(on_saved) -> None:
             schema_box.clear()
             cid = conn_select.value
             if cid is None:
-                result.set_text("Seleziona una connessione.")
+                result.set_text("Select a connection.")
                 result.classes(replace="text-sm text-red-600")
                 return
             conn = state.store.get_connection(int(cid))
             password = state.secrets.get_password(int(cid))
             if conn is None:
-                result.set_text("Connessione non trovata.")
+                result.set_text("Connection not found.")
                 result.classes(replace="text-sm text-red-600")
                 return
             try:
                 _engine, metadata = resolve_engine(conn, password, refresh=True)
                 tables = list_tables(metadata)
             except Exception as exc:
-                result.set_text(f"Errore schema: {exc}")
+                result.set_text(f"Schema error: {exc}")
                 result.classes(replace="text-sm text-red-600")
                 return
             ctx["metadata"] = metadata
             result.set_text("")
             with schema_box:
-                main_select = ui.select(tables, label="Tabella principale").classes(
-                    "w-full"
-                )
-                cols_select = ui.select([], label="Colonne", multiple=True).classes(
+                main_select = ui.select(tables, label="Main table").classes("w-full")
+                cols_select = ui.select([], label="Columns", multiple=True).classes(
                     "w-full"
                 )
                 rel_select = ui.select(
-                    [], label="Tabelle correlate (sola lettura)", multiple=True
+                    [], label="Related tables (read-only)", multiple=True
                 ).classes("w-full")
                 ctx.update(main=main_select, cols=cols_select, rel=rel_select)
 
@@ -150,11 +148,11 @@ def _create_dialog(on_saved) -> None:
             metadata = ctx.get("metadata")
             main = ctx.get("main")
             if not name.value:
-                result.set_text("Il nome è obbligatorio.")
+                result.set_text("Name is required.")
                 result.classes(replace="text-sm text-red-600")
                 return
             if metadata is None or main is None or not main.value:
-                result.set_text("Carica lo schema e scegli la tabella principale.")
+                result.set_text("Load the schema and choose the main table.")
                 result.classes(replace="text-sm text-red-600")
                 return
             # Resolve target application (existing selection or a new one).
@@ -183,8 +181,8 @@ def _create_dialog(on_saved) -> None:
             on_saved()
 
         with ui.row().classes("w-full justify-end gap-2"):
-            ui.button("Salva", on_click=save).props("color=primary")
-            ui.button("Annulla", on_click=dialog.close).props("flat")
+            ui.button("Save", on_click=save).props("color=primary")
+            ui.button("Cancel", on_click=dialog.close).props("flat")
 
     dialog.open()
 
@@ -196,9 +194,9 @@ def sheets_page() -> None:
 
     with frame(active="/sheets"):
         with ui.row().classes("w-full items-center justify-between"):
-            ui.label("Sheet").classes("text-2xl font-bold")
+            ui.label("Sheets").classes("text-2xl font-bold")
             ui.button(
-                "Nuovo sheet", icon="add", on_click=lambda: _create_dialog(refresh)
+                "New sheet", icon="add", on_click=lambda: _create_dialog(refresh)
             ).props("color=primary")
 
         container = ui.column().classes("w-full gap-2")
@@ -209,7 +207,7 @@ def sheets_page() -> None:
             sheets = [d for d in state.store.list_definitions() if d["kind"] == "sheet"]
             with container:
                 if not sheets:
-                    ui.label("Nessuno sheet salvato.").classes("text-gray-500")
+                    ui.label("No saved sheets.").classes("text-gray-500")
                     return
                 for d in sheets:
                     with ui.card().classes("w-full"):
@@ -221,7 +219,7 @@ def sheets_page() -> None:
                                 )
                             with ui.row().classes("gap-1"):
                                 ui.button(
-                                    "Apri",
+                                    "Open",
                                     icon="open_in_new",
                                     on_click=lambda d=d: ui.navigate.to(
                                         f"/sheets/{d['id']}"
@@ -238,8 +236,8 @@ def sheets_page() -> None:
 
         def _rename(d: dict[str, Any]) -> None:
             with ui.dialog() as dlg, ui.card().classes("w-96 gap-3"):
-                ui.label("Rinomina sheet").classes("text-lg font-semibold")
-                field = ui.input("Nome", value=d["name"]).classes("w-full")
+                ui.label("Rename sheet").classes("text-lg font-semibold")
+                field = ui.input("Name", value=d["name"]).classes("w-full")
 
                 def apply() -> None:
                     if field.value:
@@ -248,8 +246,8 @@ def sheets_page() -> None:
                     refresh()
 
                 with ui.row().classes("w-full justify-end gap-2"):
-                    ui.button("Salva", on_click=apply).props("color=primary")
-                    ui.button("Annulla", on_click=dlg.close).props("flat")
+                    ui.button("Save", on_click=apply).props("color=primary")
+                    ui.button("Cancel", on_click=dlg.close).props("flat")
             dlg.open()
 
         def _delete(d: dict[str, Any]) -> None:
@@ -267,20 +265,20 @@ def sheet_editor(definition_id: int) -> None:
     with frame(active="/sheets"):
         definition = state.store.get_definition(definition_id)
         if definition is None or definition["kind"] != "sheet":
-            ui.label("Sheet non trovato.").classes("text-red-600")
+            ui.label("Sheet not found.").classes("text-red-600")
             return
 
         sheet_spec = SheetSpec.from_json(definition["queryspec_json"])
         conn = state.store.get_connection(sheet_spec.connection_id)
         if conn is None:
-            ui.label("Connessione dello sheet non disponibile.").classes("text-red-600")
+            ui.label("The sheet's connection is not available.").classes("text-red-600")
             return
 
         password = state.secrets.get_password(conn["id"])
         session_settings = rls_session_settings(conn, sheet_spec.rls, get_identity())
         if sheet_spec.rls and rls_available(conn) and not get_identity():
             ui.notify(
-                "RLS attiva ma nessuna identità impostata: le policy non filtreranno nulla.",
+                "RLS enabled but no identity set: the policies will not filter anything.",
                 type="warning",
             )
         try:
@@ -290,13 +288,13 @@ def sheet_editor(definition_id: int) -> None:
             view = build_view(sheet_spec.spec, metadata)
             _fields, rows = load_rows(engine, metadata, sheet_spec.spec)
         except Exception as exc:
-            ui.label(f"Impossibile aprire lo sheet: {exc}").classes("text-red-600")
+            ui.label(f"Unable to open the sheet: {exc}").classes("text-red-600")
             return
 
         with ui.row().classes("w-full items-center justify-between"):
             ui.label(definition["name"]).classes("text-2xl font-bold")
             with ui.row().classes("gap-2"):
-                save_btn = ui.button("Salva", icon="save").props("color=primary")
+                save_btn = ui.button("Save", icon="save").props("color=primary")
                 ui.button(
                     "Webhook",
                     icon="webhook",
@@ -305,7 +303,7 @@ def sheet_editor(definition_id: int) -> None:
                     ),
                 ).props("flat")
                 ui.button(
-                    "Indietro",
+                    "Back",
                     icon="arrow_back",
                     on_click=lambda: ui.navigate.to("/sheets"),
                 ).props("flat")
@@ -321,7 +319,7 @@ def sheet_editor(definition_id: int) -> None:
         def save() -> None:
             if grid.has_errors():
                 ui.notify(
-                    "Correggi gli errori di validazione prima di salvare.",
+                    "Fix the validation errors before saving.",
                     type="negative",
                 )
                 return
@@ -336,7 +334,7 @@ def sheet_editor(definition_id: int) -> None:
                 update_originals=originals,
             )
             if not ops:
-                ui.notify("Nessuna modifica da salvare.", type="info")
+                ui.notify("No changes to save.", type="info")
                 return
             try:
                 apply_batch(engine, ops)
@@ -344,15 +342,15 @@ def sheet_editor(definition_id: int) -> None:
                 _f, fresh = load_rows(engine, metadata, sheet_spec.spec)
                 grid.reload(fresh)
                 ui.notify(
-                    "Il record è stato modificato da altri: griglia ricaricata, riprova.",
+                    "The record was modified by someone else: grid reloaded, retry.",
                     type="warning",
                 )
                 return
             except Exception as exc:
-                ui.notify(f"Salvataggio annullato (rollback): {exc}", type="negative")
+                ui.notify(f"Save cancelled (rollback): {exc}", type="negative")
                 return
             _f, fresh = load_rows(engine, metadata, sheet_spec.spec)
             grid.reload(fresh)
-            ui.notify("Modifiche salvate.", type="positive")
+            ui.notify("Changes saved.", type="positive")
 
         save_btn.on_click(lambda: save())

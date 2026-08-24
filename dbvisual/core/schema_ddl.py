@@ -96,7 +96,7 @@ def _sa_type(spec: ColumnSpec) -> TypeEngine[Any]:
     try:
         factory = _LOGICAL_TYPES[spec.type]
     except KeyError as exc:
-        raise DDLNotSupported(f"Tipo logico sconosciuto: {spec.type!r}") from exc
+        raise DDLNotSupported(f"Unknown logical type: {spec.type!r}") from exc
     return factory(spec.length)
 
 
@@ -150,8 +150,8 @@ def compose_add_foreign_key(dialect: Dialect, table: str, fk: ForeignKeySpec) ->
     """Compose an ``ALTER TABLE ... ADD CONSTRAINT ... FOREIGN KEY`` statement."""
     if dialect.name in _NO_ALTER_FK:
         raise DDLNotSupported(
-            f"{dialect.name}: aggiunta di una FK via ALTER non supportata "
-            "(ricrea la tabella con la FK inline)."
+            f"{dialect.name}: adding a FK via ALTER is not supported "
+            "(recreate the table with an inline FK)."
         )
     name = fk.name or f"fk_{table}_{fk.column}"
     return (
@@ -164,7 +164,7 @@ def compose_drop_foreign_key(dialect: Dialect, table: str, constraint: str) -> s
     """Compose an ``ALTER TABLE ... DROP CONSTRAINT`` statement (destructive)."""
     if dialect.name in _NO_ALTER_FK:
         raise DDLNotSupported(
-            f"{dialect.name}: rimozione di una FK via ALTER non supportata."
+            f"{dialect.name}: removing a FK via ALTER is not supported."
         )
     return f"ALTER TABLE {table} DROP CONSTRAINT {constraint}"
 
@@ -192,5 +192,5 @@ def execute_ddl(engine: Engine, sql: str) -> None:
             conn.execute(text(sql))
     except Exception as exc:  # includes permission / syntax errors
         raise DDLPermissionError(
-            f"Esecuzione DDL fallita (verifica i privilegi DDL): {exc}"
+            f"DDL execution failed (check DDL privileges): {exc}"
         ) from exc

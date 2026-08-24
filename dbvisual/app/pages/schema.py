@@ -7,7 +7,8 @@ operations). The DDL channel is separate from the report read-only guard.
 
 from __future__ import annotations
 
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from nicegui import ui
 
@@ -25,12 +26,9 @@ from dbvisual.core.introspect import (
     detect_foreign_keys,
     get_columns,
     list_tables,
-    reflect_schema,
 )
 from dbvisual.core.schema_ddl import (
     ColumnSpec,
-    DDLNotSupported,
-    ForeignKeySpec,
     TableSpec,
     compose_add_column,
     compose_create_table,
@@ -46,17 +44,19 @@ def _review_and_execute(
 ) -> None:
     """Show the exact SQL and execute only after (double) confirmation."""
     with ui.dialog() as dialog, ui.card().classes("w-[620px] gap-3"):
-        ui.label("Rivedi ed esegui").classes("text-lg font-semibold")
+        ui.label("Review and execute").classes("text-lg font-semibold")
         if destructive:
             ui.label(
-                "⚠ Operazione DISTRUTTIVA: perdita di dati/struttura irreversibile."
+                "DESTRUCTIVE operation: irreversible loss of data/structure."
             ).classes("text-red-600 font-semibold")
         ui.code(sql, language="sql").classes("w-full")
-        confirm = ui.checkbox("Confermo di aver letto l'SQL") if destructive else None
+        confirm = ui.checkbox("I confirm I have read the SQL") if destructive else None
 
         def run() -> None:
             if destructive and not (confirm and confirm.value):
-                ui.notify("Conferma richiesta per un'operazione distruttiva.", type="warning")
+                ui.notify(
+                    "Confirmation required for a destructive operation.", type="warning"
+                )
                 return
             try:
                 execute_ddl(engine, sql)
@@ -65,14 +65,14 @@ def _review_and_execute(
                 return
             dialog.close()
             on_done()
-            ui.notify("DDL eseguito.", type="positive")
+            ui.notify("DDL executed.", type="positive")
 
         with ui.row().classes("w-full justify-end gap-2"):
-            label = "Esegui (conferma)" if destructive else "Esegui"
+            label = "Execute (confirm)" if destructive else "Execute"
             ui.button(label, on_click=run).props(
                 "color=negative" if destructive else "color=primary"
             )
-            ui.button("Annulla", on_click=dialog.close).props("flat")
+            ui.button("Cancel", on_click=dialog.close).props("flat")
     dialog.open()
 
 
@@ -85,12 +85,12 @@ def schema_page() -> None:
     with frame(active="/schema"):
         ui.label("Database (schema)").classes("text-2xl font-bold")
         ui.label(
-            "Il DDL viene sempre mostrato e richiede conferma esplicita; le operazioni "
-            "distruttive richiedono doppia conferma. Serve un utente con privilegi DDL."
+            "The DDL is always shown and requires explicit confirmation; destructive "
+            "operations require a double confirmation. A user with DDL privileges is needed."
         ).classes("text-sm text-gray-500")
 
         conn_select = ui.select(
-            {c["id"]: c["name"] for c in conns}, label="Connessione"
+            {c["id"]: c["name"] for c in conns}, label="Connection"
         ).classes("w-96")
         body = ui.column().classes("w-full gap-3")
         ctx: dict[str, Any] = {}
@@ -109,10 +109,15 @@ def schema_page() -> None:
                 tables = list_tables(metadata)
             except Exception as exc:
                 with body:
-                    ui.label(f"Errore schema: {exc}").classes("text-red-600")
+                    ui.label(f"Schema error: {exc}").classes("text-red-600")
                 return
-            ctx.update(engine=engine, metadata=metadata, dialect=engine.dialect,
-                       conn=conn, tables=tables)
+            ctx.update(
+                engine=engine,
+                metadata=metadata,
+                dialect=engine.dialect,
+                conn=conn,
+                tables=tables,
+            )
             _render(engine, metadata, tables)
 
         def refresh() -> None:
@@ -122,72 +127,95 @@ def schema_page() -> None:
             body.clear()
             with body:
                 with ui.row().classes("gap-2"):
-                    ui.button("Crea tabella", icon="add_box",
-                              on_click=lambda: _create_table_dialog(refresh)).props(
-                        "color=primary"
-                    )
-                    ui.button("Importa CSV", icon="upload_file",
-                              on_click=lambda: _import_csv_dialog(refresh)).props("outline")
-                    ui.button("Diagramma relazioni", icon="account_tree",
-                              on_click=lambda: _diagram_dialog()).props("outline")
+                    ui.button(
+                        "Create table",
+                        icon="add_box",
+                        on_click=lambda: _create_table_dialog(refresh),
+                    ).props("color=primary")
+                    ui.button(
+                        "Import CSV",
+                        icon="upload_file",
+                        on_click=lambda: _import_csv_dialog(refresh),
+                    ).props("outline")
+                    ui.button(
+                        "Relationship diagram",
+                        icon="account_tree",
+                        on_click=lambda: _diagram_dialog(),
+                    ).props("outline")
                 if not tables:
-                    ui.label("Nessuna tabella.").classes("text-gray-500")
+                    ui.label("No tables.").classes("text-gray-500")
                 for table in tables:
                     columns = get_columns(metadata, table)
                     fks = detect_foreign_keys(metadata, table)
                     with ui.expansion(table, icon="table_chart").classes("w-full"):
-                        ui.aggrid({
-                            "columnDefs": [
-                                {"headerName": "Colonna", "field": "name"},
-                                {"headerName": "Tipo", "field": "type"},
-                                {"headerName": "Nullable", "field": "nullable"},
-                                {"headerName": "PK", "field": "pk"},
-                            ],
-                            "rowData": [
-                                {"name": c.name, "type": c.type,
-                                 "nullable": c.nullable, "pk": c.primary_key}
-                                for c in columns
-                            ],
-                        }).classes("h-48")
+                        ui.aggrid(
+                            {
+                                "columnDefs": [
+                                    {"headerName": "Column", "field": "name"},
+                                    {"headerName": "Type", "field": "type"},
+                                    {"headerName": "Nullable", "field": "nullable"},
+                                    {"headerName": "PK", "field": "pk"},
+                                ],
+                                "rowData": [
+                                    {
+                                        "name": c.name,
+                                        "type": c.type,
+                                        "nullable": c.nullable,
+                                        "pk": c.primary_key,
+                                    }
+                                    for c in columns
+                                ],
+                            }
+                        ).classes("h-48")
                         for fk in fks:
                             ui.label(
                                 f"FK: {fk.local_col} → {fk.remote_table}.{fk.remote_col}"
                             ).classes("text-sm font-mono")
                         with ui.row().classes("gap-2"):
-                            ui.button("Aggiungi colonna", icon="add",
-                                      on_click=lambda t=table: _add_column_dialog(t, refresh)
-                                      ).props("flat size=sm")
-                            ui.button("Elimina colonna", icon="remove",
-                                      on_click=lambda t=table, cols=columns:
-                                      _drop_column_dialog(t, cols, refresh)
-                                      ).props("flat size=sm color=negative")
-                            ui.button("Esporta CSV", icon="download",
-                                      on_click=lambda t=table: _export_csv(t)).props(
-                                "flat size=sm")
-                            ui.button("Elimina tabella", icon="delete",
-                                      on_click=lambda t=table: _drop_table(t, refresh)
-                                      ).props("flat size=sm color=negative")
+                            ui.button(
+                                "Add column",
+                                icon="add",
+                                on_click=lambda t=table: _add_column_dialog(t, refresh),
+                            ).props("flat size=sm")
+                            ui.button(
+                                "Delete column",
+                                icon="remove",
+                                on_click=lambda t=table, cols=columns: (
+                                    _drop_column_dialog(t, cols, refresh)
+                                ),
+                            ).props("flat size=sm color=negative")
+                            ui.button(
+                                "Export CSV",
+                                icon="download",
+                                on_click=lambda t=table: _export_csv(t),
+                            ).props("flat size=sm")
+                            ui.button(
+                                "Delete table",
+                                icon="delete",
+                                on_click=lambda t=table: _drop_table(t, refresh),
+                            ).props("flat size=sm color=negative")
 
         # -- operations -----------------------------------------------------
 
         def _create_table_dialog(on_done: Callable[[], None]) -> None:
             engine, dialect = ctx["engine"], ctx["dialect"]
             with ui.dialog() as dlg, ui.card().classes("w-[680px] gap-2"):
-                ui.label("Crea tabella").classes("text-lg font-semibold")
-                name = ui.input("Nome tabella").classes("w-full")
+                ui.label("Create table").classes("text-lg font-semibold")
+                name = ui.input("Table name").classes("w-full")
                 rows_box = ui.column().classes("w-full gap-1")
                 col_rows: list[dict[str, Any]] = []
 
                 def add_row(cname: str = "", ctype: str = "text") -> None:
                     with rows_box:
                         with ui.row().classes("items-center gap-2") as row:
-                            n = ui.input("Colonna", value=cname).classes("w-40")
+                            n = ui.input("Column", value=cname).classes("w-40")
                             t = ui.select(logical_types(), value=ctype).classes("w-32")
                             pk = ui.checkbox("PK")
                             nn = ui.checkbox("NOT NULL")
                             entry = {"n": n, "t": t, "pk": pk, "nn": nn, "row": row}
-                            ui.button(icon="close", on_click=lambda e=entry: _remove(e)
-                                      ).props("flat dense")
+                            ui.button(
+                                icon="close", on_click=lambda e=entry: _remove(e)
+                            ).props("flat dense")
                             col_rows.append(entry)
 
                 def _remove(entry: dict[str, Any]) -> None:
@@ -195,71 +223,91 @@ def schema_page() -> None:
                     col_rows.remove(entry)
 
                 add_row("id", "integer")
-                ui.button("Aggiungi colonna", icon="add", on_click=lambda: add_row()
-                          ).props("flat size=sm")
+                ui.button("Add column", icon="add", on_click=lambda: add_row()).props(
+                    "flat size=sm"
+                )
 
                 def compose_and_review() -> None:
                     specs = [
-                        ColumnSpec(name=e["n"].value, type=e["t"].value,
-                                   primary_key=bool(e["pk"].value),
-                                   nullable=not e["nn"].value)
-                        for e in col_rows if e["n"].value
+                        ColumnSpec(
+                            name=e["n"].value,
+                            type=e["t"].value,
+                            primary_key=bool(e["pk"].value),
+                            nullable=not e["nn"].value,
+                        )
+                        for e in col_rows
+                        if e["n"].value
                     ]
                     if not name.value or not specs:
-                        ui.notify("Nome e almeno una colonna richiesti.", type="warning")
+                        ui.notify(
+                            "Name and at least one column are required.", type="warning"
+                        )
                         return
                     sql = compose_create_table(dialect, TableSpec(name.value, specs))
                     dlg.close()
                     _review_and_execute(engine, sql, destructive=False, on_done=on_done)
 
                 with ui.row().classes("w-full justify-between"):
-                    ui.button("Genera con AI", icon="auto_awesome",
-                              on_click=lambda: _ai_ddl(name, on_done, dlg)).props("outline")
+                    ui.button(
+                        "Generate with AI",
+                        icon="auto_awesome",
+                        on_click=lambda: _ai_ddl(name, on_done, dlg),
+                    ).props("outline")
                     with ui.row().classes("gap-2"):
-                        ui.button("Rivedi DDL", on_click=compose_and_review).props(
-                            "color=primary")
-                        ui.button("Annulla", on_click=dlg.close).props("flat")
+                        ui.button("Review DDL", on_click=compose_and_review).props(
+                            "color=primary"
+                        )
+                        ui.button("Cancel", on_click=dlg.close).props("flat")
             dlg.open()
 
         def _ai_ddl(name_input: Any, on_done: Callable[[], None], parent: Any) -> None:
             cfg = get_ai_config()
             key = get_api_key(state.secrets, cfg.provider)
             if not cfg.enabled or not key:
-                ui.notify("Assistente AI disattivato o senza API key (Impostazioni).",
-                          type="warning")
+                ui.notify(
+                    "AI assistant disabled or without API key (Settings).",
+                    type="warning",
+                )
                 return
             with ui.dialog() as dlg, ui.card().classes("w-[560px] gap-2"):
-                ui.label("Genera DDL con AI").classes("text-lg font-semibold")
+                ui.label("Generate DDL with AI").classes("text-lg font-semibold")
                 ui.label(
-                    "La descrizione viene inviata al provider cloud scelto."
+                    "The description is sent to the chosen cloud provider."
                 ).classes("text-xs text-amber-700")
-                prompt = ui.textarea("Descrivi la tabella").classes("w-full")
+                prompt = ui.textarea("Describe the table").classes("w-full")
 
                 def go() -> None:
                     engine, metadata = ctx["engine"], ctx["metadata"]
-                    schema = {t: [c.name for c in get_columns(metadata, t)]
-                              for t in list_tables(metadata)}
+                    schema = {
+                        t: [c.name for c in get_columns(metadata, t)]
+                        for t in list_tables(metadata)
+                    }
                     try:
-                        sql = generate_ddl_via_ai(cfg.provider, key, cfg.model,
-                                                  prompt.value or "", schema,
-                                                  ctx["dialect"].name)
+                        sql = generate_ddl_via_ai(
+                            cfg.provider,
+                            key,
+                            cfg.model,
+                            prompt.value or "",
+                            schema,
+                            ctx["dialect"].name,
+                        )
                     except Exception as exc:
-                        ui.notify(f"Errore AI: {exc}", type="negative")
+                        ui.notify(f"AI error: {exc}", type="negative")
                         return
                     dlg.close()
                     parent.close()
                     _review_and_execute(engine, sql, destructive=False, on_done=on_done)
 
                 with ui.row().classes("w-full justify-end gap-2"):
-                    ui.button("Genera", on_click=go).props("color=primary")
-                    ui.button("Annulla", on_click=dlg.close).props("flat")
+                    ui.button("Generate", on_click=go).props("color=primary")
+                    ui.button("Cancel", on_click=dlg.close).props("flat")
             dlg.open()
 
         def _add_column_dialog(table: str, on_done: Callable[[], None]) -> None:
             engine, dialect = ctx["engine"], ctx["dialect"]
             with ui.dialog() as dlg, ui.card().classes("w-[480px] gap-2"):
-                ui.label(f"Aggiungi colonna — {table}").classes("text-lg font-semibold")
-                cname = ui.input("Nome colonna").classes("w-full")
+                ui.label(f"Add column — {table}").classes("text-lg font-semibold")
+                cname = ui.input("Column name").classes("w-full")
                 ctype = ui.select(logical_types(), value="text").classes("w-full")
                 nn = ui.checkbox("NOT NULL")
 
@@ -267,21 +315,25 @@ def schema_page() -> None:
                     if not cname.value:
                         return
                     sql = compose_add_column(
-                        dialect, table,
-                        ColumnSpec(cname.value, ctype.value, nullable=not nn.value))
+                        dialect,
+                        table,
+                        ColumnSpec(cname.value, ctype.value, nullable=not nn.value),
+                    )
                     dlg.close()
                     _review_and_execute(engine, sql, destructive=False, on_done=on_done)
 
                 with ui.row().classes("w-full justify-end gap-2"):
-                    ui.button("Rivedi DDL", on_click=go).props("color=primary")
-                    ui.button("Annulla", on_click=dlg.close).props("flat")
+                    ui.button("Review DDL", on_click=go).props("color=primary")
+                    ui.button("Cancel", on_click=dlg.close).props("flat")
             dlg.open()
 
         def _drop_column_dialog(table: str, columns: Any, on_done) -> None:
             engine, dialect = ctx["engine"], ctx["dialect"]
             with ui.dialog() as dlg, ui.card().classes("w-[420px] gap-2"):
-                ui.label(f"Elimina colonna — {table}").classes("text-lg font-semibold")
-                col = ui.select([c.name for c in columns], label="Colonna").classes("w-full")
+                ui.label(f"Delete column — {table}").classes("text-lg font-semibold")
+                col = ui.select([c.name for c in columns], label="Column").classes(
+                    "w-full"
+                )
 
                 def go() -> None:
                     if not col.value:
@@ -291,8 +343,8 @@ def schema_page() -> None:
                     _review_and_execute(engine, sql, destructive=True, on_done=on_done)
 
                 with ui.row().classes("w-full justify-end gap-2"):
-                    ui.button("Rivedi DDL", on_click=go).props("color=negative")
-                    ui.button("Annulla", on_click=dlg.close).props("flat")
+                    ui.button("Review DDL", on_click=go).props("color=negative")
+                    ui.button("Cancel", on_click=dlg.close).props("flat")
             dlg.open()
 
         def _drop_table(table: str, on_done) -> None:
@@ -307,32 +359,36 @@ def schema_page() -> None:
         def _import_csv_dialog(on_done) -> None:
             engine, dialect = ctx["engine"], ctx["dialect"]
             with ui.dialog() as dlg, ui.card().classes("w-[560px] gap-2"):
-                ui.label("Importa CSV").classes("text-lg font-semibold")
-                tname = ui.input("Nome nuova tabella").classes("w-full")
+                ui.label("Import CSV").classes("text-lg font-semibold")
+                tname = ui.input("New table name").classes("w-full")
                 holder: dict[str, str] = {}
 
                 def _on_upload(e: Any) -> None:
                     holder["text"] = e.content.read().decode("utf-8")
-                    ui.notify(f"CSV caricato: {e.name}", type="info")
+                    ui.notify(f"CSV loaded: {e.name}", type="info")
 
                 ui.upload(on_upload=_on_upload, auto_upload=True).classes("w-full")
 
                 def go() -> None:
                     if not tname.value or "text" not in holder:
-                        ui.notify("Nome tabella e CSV richiesti.", type="warning")
+                        ui.notify("Table name and CSV are required.", type="warning")
                         return
-                    sql, header = csv_create_table_ddl(dialect, tname.value, holder["text"])
+                    sql, header = csv_create_table_ddl(
+                        dialect, tname.value, holder["text"]
+                    )
                     dlg.close()
 
                     def after_create() -> None:
                         _fill_csv(engine, tname.value, header, holder["text"])
                         on_done()
 
-                    _review_and_execute(engine, sql, destructive=False, on_done=after_create)
+                    _review_and_execute(
+                        engine, sql, destructive=False, on_done=after_create
+                    )
 
                 with ui.row().classes("w-full justify-end gap-2"):
-                    ui.button("Rivedi DDL", on_click=go).props("color=primary")
-                    ui.button("Annulla", on_click=dlg.close).props("flat")
+                    ui.button("Review DDL", on_click=go).props("color=primary")
+                    ui.button("Cancel", on_click=dlg.close).props("flat")
             dlg.open()
 
         def _fill_csv(engine: Any, table: str, header: list[str], text: str) -> None:
@@ -346,8 +402,13 @@ def schema_page() -> None:
             stmt = sa_text(f"INSERT INTO {table} ({cols}) VALUES ({binds})")
             with engine.begin() as conn:
                 for r in rows:
-                    conn.execute(stmt, {h: (r[i] if i < len(r) else None)
-                                        for i, h in enumerate(header)})
+                    conn.execute(
+                        stmt,
+                        {
+                            h: (r[i] if i < len(r) else None)
+                            for i, h in enumerate(header)
+                        },
+                    )
 
         def _diagram_dialog() -> None:
             metadata, tables = ctx["metadata"], ctx["tables"]
@@ -355,11 +416,11 @@ def schema_page() -> None:
             for t in tables:
                 for fk in detect_foreign_keys(metadata, t):
                     lines.append(f"  {t} --> {fk.remote_table}")
-            diagram = "\n".join(lines) if len(lines) > 1 else "graph LR\n  (nessuna FK)"
+            diagram = "\n".join(lines) if len(lines) > 1 else "graph LR\n  (no FK)"
             with ui.dialog() as dlg, ui.card().classes("w-[640px] gap-2"):
-                ui.label("Diagramma relazioni").classes("text-lg font-semibold")
+                ui.label("Relationship diagram").classes("text-lg font-semibold")
                 ui.mermaid(diagram)
-                ui.button("Chiudi", on_click=dlg.close).props("flat")
+                ui.button("Close", on_click=dlg.close).props("flat")
             dlg.open()
 
         conn_select.on_value_change(lambda _e: load())

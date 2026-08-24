@@ -27,15 +27,15 @@ from dbvisual.core.introspect import detect_foreign_keys
 from dbvisual.core.queryspec import QuerySpec
 
 __all__ = [
+    "ConflictError",
+    "DetailChange",
     "DetailQuery",
     "MasterDetailSpec",
-    "ConflictError",
-    "validate_detail_query",
-    "suggest_detail_fk",
-    "load_details",
-    "DetailChange",
     "build_save_plan",
     "execute_save",
+    "load_details",
+    "suggest_detail_fk",
+    "validate_detail_query",
 ]
 
 
@@ -63,7 +63,7 @@ class MasterDetailSpec(BaseModel):
         return self.model_dump_json()
 
     @classmethod
-    def from_json(cls, raw: str) -> "MasterDetailSpec":
+    def from_json(cls, raw: str) -> MasterDetailSpec:
         return cls.model_validate_json(raw)
 
 
@@ -75,10 +75,10 @@ def validate_detail_query(detail: DetailQuery) -> None:
     n = len(detail.spec.params)
     if n != 1:
         raise ValueError(
-            f"La detail query deve avere esattamente un parametro (trovati {n})."
+            f"The detail query must have exactly one parameter (found {n})."
         )
     if detail.spec.params[0].name != detail.param_name:
-        raise ValueError("Il nome del parametro non corrisponde a quello dichiarato.")
+        raise ValueError("The parameter name does not match the declared one.")
 
 
 def suggest_detail_fk(

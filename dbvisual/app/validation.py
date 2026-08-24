@@ -76,15 +76,15 @@ def _luhn_ok(digits: str) -> bool:
 def _check_format(fmt: str, text: str) -> str | None:
     """Return an error message if ``text`` does not match ``fmt``, else ``None``."""
     if fmt == "email" and not _EMAIL_RE.match(text):
-        return "Email non valida."
+        return "Invalid email."
     if fmt == "phone" and not _PHONE_RE.match(text):
-        return "Numero di telefono non valido."
+        return "Invalid phone number."
     if fmt == "zip" and not _ZIP_RE.match(text):
-        return "CAP/ZIP non valido."
+        return "Invalid ZIP/postal code."
     if fmt == "url" and not _URL_RE.match(text):
-        return "URL non valido."
+        return "Invalid URL."
     if fmt == "credit_card" and not _luhn_ok(re.sub(r"[ \-]", "", text)):
-        return "Numero di carta di credito non valido."
+        return "Invalid credit card number."
     return None
 
 
@@ -98,7 +98,7 @@ def validate_field(rule: FieldRule, value: Any) -> list[str]:
 
     if _is_empty(value):
         if rule.required:
-            errors.append("Campo obbligatorio.")
+            errors.append("Required field.")
         return [rule.message] if (errors and rule.message) else errors
 
     text = str(value)
@@ -106,25 +106,25 @@ def validate_field(rule: FieldRule, value: Any) -> list[str]:
     if rule.min is not None or rule.max is not None:
         num = _to_number(value)
         if num is None:
-            errors.append("Deve essere un numero.")
+            errors.append("Must be a number.")
         else:
             if rule.min is not None and num < rule.min:
-                errors.append(f"Deve essere ≥ {rule.min:g}.")
+                errors.append(f"Must be >= {rule.min:g}.")
             if rule.max is not None and num > rule.max:
-                errors.append(f"Deve essere ≤ {rule.max:g}.")
+                errors.append(f"Must be <= {rule.max:g}.")
 
     if rule.min_len is not None and len(text) < rule.min_len:
-        errors.append(f"Lunghezza minima {rule.min_len}.")
+        errors.append(f"Minimum length {rule.min_len}.")
     if rule.max_len is not None and len(text) > rule.max_len:
-        errors.append(f"Lunghezza massima {rule.max_len}.")
+        errors.append(f"Maximum length {rule.max_len}.")
 
     if rule.allowed_chars and re.search(f"[^{rule.allowed_chars}]", text):
-        errors.append("Contiene caratteri non ammessi.")
+        errors.append("Contains characters that are not allowed.")
     if rule.forbidden_chars and re.search(f"[{rule.forbidden_chars}]", text):
-        errors.append("Contiene caratteri vietati.")
+        errors.append("Contains forbidden characters.")
 
     if rule.regex and not re.fullmatch(rule.regex, text):
-        errors.append("Formato non valido.")
+        errors.append("Invalid format.")
 
     if rule.fmt:
         msg = _check_format(rule.fmt, text)
@@ -134,13 +134,13 @@ def validate_field(rule: FieldRule, value: Any) -> list[str]:
     if rule.date_not_before or rule.date_not_after:
         dvalue = _to_date(value)
         if dvalue is None:
-            errors.append("Data non valida.")
+            errors.append("Invalid date.")
         else:
             lo = _to_date(rule.date_not_before) if rule.date_not_before else None
             hi = _to_date(rule.date_not_after) if rule.date_not_after else None
             if lo and dvalue < lo:
-                errors.append(f"Non prima di {lo.isoformat()}.")
+                errors.append(f"Not before {lo.isoformat()}.")
             if hi and dvalue > hi:
-                errors.append(f"Non dopo {hi.isoformat()}.")
+                errors.append(f"Not after {hi.isoformat()}.")
 
     return [rule.message] if (errors and rule.message) else errors

@@ -131,8 +131,8 @@ def build_engine(config: ConnectionConfig) -> Engine:
 
     if config.dialect == "sqlcipher" and not encryption_supported("sqlcipher"):
         raise RuntimeError(
-            "SQLite cifrato non disponibile: installa il driver SQLCipher "
-            "(pysqlcipher3 o sqlcipher3)."
+            "Encrypted SQLite not available: install the SQLCipher driver "
+            "(pysqlcipher3 or sqlcipher3)."
         )
 
     url = _build_url(config)
@@ -168,7 +168,7 @@ def _build_encrypted_duckdb(config: ConnectionConfig) -> Engine:
     """
     path = (config.database or "").replace("\\", "/").replace("'", "''")
     if not path or path == ":memory:":
-        raise ValueError("Un DuckDB cifrato richiede un percorso file.")
+        raise ValueError("An encrypted DuckDB requires a file path.")
     key = (config.encryption_key or "").replace("'", "''")
     kwargs: dict[str, Any] = {"poolclass": StaticPool}
     kwargs.update(config.engine_kwargs)
