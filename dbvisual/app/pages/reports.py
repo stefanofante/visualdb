@@ -18,7 +18,9 @@ from dbvisual.app.report_service import (
     ReportSpec,
     aggregate_summary,
     ensure_readonly,
+    flatten_group_rows,
     full_text_filter,
+    group_with_subtotals,
     load_report_rows,
     resolve_engine,
 )
@@ -271,8 +273,40 @@ def report_viewer(definition_id: int) -> None:
             .props("dense clearable")
             .classes("w-72")
         )
+        with ui.expansion("Grouping and subtotals", icon="table_rows").classes(
+            "w-full"
+        ):
+            with ui.row().classes("items-end gap-2 flex-wrap"):
+                group_sel = ui.select(
+                    [], label="Group by (levels)", multiple=True
+                ).classes("w-64")
+                gval_sel = ui.select([], label="Subtotal field").classes("w-40")
+                gagg_sel = ui.select(
+                    ["sum", "avg", "count", "min", "max"], value="sum", label="Aggregate"
+                ).classes("w-32")
+                gsort_sel = ui.select(
+                    {"caption": "Caption", "total": "Subtotal"},
+                    value="caption",
+                    label="Sort groups by",
+                ).classes("w-40")
+                gdesc = ui.switch("Descending")
+                ui.button(
+                    "Apply grouping",
+                    icon="playlist_add_check",
+                    on_click=lambda: apply_grouping(),
+                ).props("color=primary")
+                ui.button("Clear", icon="clear", on_click=lambda: clear_grouping()).props(
+                    "flat"
+                )
+
         grid_box = ui.column().classes("w-full")
         chart_box = ui.column().classes("w-full")
+
+        def _refresh_group_fields(fields: list[str]) -> None:
+            group_sel.options = fields
+            gval_sel.options = fields
+            group_sel.update()
+            gval_sel.update()
 
         def _param_values() -> dict[str, Any]:
             values: dict[str, Any] = {}
@@ -283,6 +317,11 @@ def report_viewer(definition_id: int) -> None:
                     val = [v.strip() for v in val.split(",") if v.strip()]
                 values[name] = val
             return values
+
+        def _current_rows() -> list[dict[str, Any]]:
+            return full_text_filter(
+                state_holder["rows"], search.value or "", state_holder["fields"]
+            )
 
         def render_grid(rows: list[dict[str, Any]]) -> None:
             grid_box.clear()
@@ -312,6 +351,65 @@ def report_viewer(definition_id: int) -> None:
                         on_click=lambda: grid.run_grid_method("exportDataAsCsv"),
                     ).props("outline size=sm")
 
+        def render_grouped(rows: list[dict[str, Any]]) -> None:
+            grid_box.clear()
+            detail_fields = state_holder["fields"]
+            value_aggs = {gval_sel.value: gagg_sel.value} if gval_sel.value else {}
+            tree = group_with_subtotals(
+                rows,
+                list(group_sel.value or []),
+                value_aggs,
+                sort_by=gsort_sel.value,
+                descending=bool(gdesc.value),
+            )
+            flat = flatten_group_rows(tree, detail_fields)
+            for r in flat:
+                if "_group" in r:
+                    r["_group"] = ("\u2003" * int(r["_level"])) + r["_group"]
+            col_defs: list[dict[str, Any]] = [
+                {"headerName": "Group", "field": "_group", "minWidth": 260}
+            ]
+            col_defs += [{"field": f, "resizable": True} for f in detail_fields]
+            col_defs.append({"headerName": "Count", "field": "_count", "maxWidth": 110})
+            with grid_box:
+                grid = ui.aggrid(
+                    {
+                        "columnDefs": col_defs,
+                        "rowData": flat,
+                        "defaultColDef": {"flex": 1, "minWidth": 110},
+                        ":getRowStyle": (
+                            "params => !params.data ? null : "
+                            "(params.data._type === 'subtotal' "
+                            "? {fontWeight:'700', background:'#eef2f7'} : "
+                            "(params.data._type === 'group' "
+                            "? {fontWeight:'700'} : null))"
+                        ),
+                    }
+                ).classes("w-full h-[55vh]")
+                state_holder["grid"] = grid
+                with ui.row().classes("gap-2 mt-2"):
+                    ui.button(
+                        "Export CSV",
+                        icon="download",
+                        on_click=lambda: grid.run_grid_method("exportDataAsCsv"),
+                    ).props("outline size=sm")
+
+        def render(rows: list[dict[str, Any]]) -> None:
+            if group_sel.value:
+                render_grouped(rows)
+            else:
+                render_grid(rows)
+
+        def apply_grouping() -> None:
+            if not state_holder["rows"]:
+                ui.notify("Load the data first.", type="warning")
+                return
+            render(_current_rows())
+
+        def clear_grouping() -> None:
+            group_sel.value = []
+            render(_current_rows())
+
         def load() -> None:
             try:
                 fields, rows = load_report_rows(
@@ -322,14 +420,12 @@ def report_viewer(definition_id: int) -> None:
                 return
             state_holder["fields"] = fields
             state_holder["rows"] = rows
-            render_grid(rows)
+            _refresh_group_fields(fields)
+            render(rows)
             _refresh_chart_fields(fields)
 
         def apply_search(text_value: str | None) -> None:
-            rows = full_text_filter(
-                state_holder["rows"], text_value or "", state_holder["fields"]
-            )
-            render_grid(rows)
+            render(_current_rows())
 
         search.on_value_change(lambda e: apply_search(e.value))
 

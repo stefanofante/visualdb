@@ -9,6 +9,7 @@ with bound parameters. Nothing here writes to the target database.
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass, field as dc_field
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
@@ -36,9 +37,13 @@ __all__ = [
     "full_text_filter",
     "aggregate_summary",
     "column_totals",
+    "GroupNode",
+    "group_with_subtotals",
+    "flatten_group_rows",
 ]
 
 Agg = Literal["sum", "avg", "count", "min", "max"]
+GroupSort = Literal["caption", "total"]
 
 # Leading keywords allowed for custom report SQL (read-only).
 _READONLY_START = re.compile(r"^\s*(select|with)\b", re.IGNORECASE)
@@ -108,13 +113,11 @@ def ensure_readonly(sql: str) -> None:
     """Raise ``ValueError`` if ``sql`` is not a single read-only statement."""
     stripped = sql.strip().rstrip(";")
     if ";" in stripped:
-        raise ValueError("Solo una singola istruzione SELECT è ammessa.")
+        raise ValueError("Only a single SELECT statement is allowed.")
     if not _READONLY_START.match(stripped):
-        raise ValueError("La query del report deve iniziare con SELECT o WITH.")
+        raise ValueError("The report query must start with SELECT or WITH.")
     if _WRITE.search(stripped):
-        raise ValueError(
-            "La query del report non può contenere istruzioni di scrittura."
-        )
+        raise ValueError("The report query cannot contain write statements.")
 
 
 def run_custom_sql(
@@ -332,6 +335,134 @@ def column_totals(rows: list[dict[str, Any]], aggs: dict[str, Agg]) -> dict[str,
     """Compute per-column aggregates over ``rows`` (used for report totals)."""
     totals: dict[str, float] = {}
     for field_name, agg in aggs.items():
+        if agg == "count":
+            totals[field_name] = float(
+                sum(1 for r in rows if r.get(field_name) is not None)
+            )
+            continue
         nums = [n for n in (_to_num(r.get(field_name)) for r in rows) if n is not None]
         totals[field_name] = _aggregate(nums, agg)
     return totals
+
+
+# -- grouping with subtotals ------------------------------------------------
+
+
+@dataclass
+class GroupNode:
+    """A single grouping node with its subtotals and either sub-groups or rows.
+
+    ``rows`` is populated only at the deepest level; intermediate levels carry
+    ``groups`` instead. ``subtotals`` holds the aggregated value per configured
+    field for all detail rows under this node.
+    """
+
+    field: str
+    key: Any
+    caption: str
+    level: int
+    count: int
+    subtotals: dict[str, float]
+    groups: list["GroupNode"] = dc_field(default_factory=list)
+    rows: list[dict[str, Any]] = dc_field(default_factory=list)
+
+
+def _sort_nodes(
+    nodes: list[GroupNode], sort_by: GroupSort, total_field: str | None, desc: bool
+) -> None:
+    if sort_by == "total":
+        tf = total_field
+        nodes.sort(
+            key=lambda n: (n.subtotals.get(tf, 0.0) if tf else 0.0), reverse=desc
+        )
+    else:
+        nodes.sort(key=lambda n: n.caption.lower(), reverse=desc)
+
+
+def group_with_subtotals(
+    rows: list[dict[str, Any]],
+    group_by: list[str],
+    value_aggs: dict[str, Agg],
+    *,
+    sort_by: GroupSort = "caption",
+    descending: bool = False,
+    total_field: str | None = None,
+) -> list[GroupNode]:
+    """Group ``rows`` by ``group_by`` (multi-level) with per-group subtotals.
+
+    ``value_aggs`` maps a field to its aggregate (sum/avg/count/min/max), applied
+    at every group level. Groups are ordered by ``caption`` or by the subtotal of
+    ``total_field`` (defaults to the first ``value_aggs`` field). Works on already
+    filtered rows, so it stays consistent with ``full_text_filter``/``filter_rows``.
+    """
+    if not group_by:
+        return []
+    tf = total_field or (next(iter(value_aggs)) if value_aggs else None)
+
+    def build(subset: list[dict[str, Any]], levels: list[str], level: int) -> list[GroupNode]:
+        current = levels[0]
+        buckets: dict[Any, list[dict[str, Any]]] = {}
+        order: list[Any] = []
+        for r in subset:
+            k = r.get(current)
+            if k not in buckets:
+                buckets[k] = []
+                order.append(k)
+            buckets[k].append(r)
+        nodes: list[GroupNode] = []
+        for k in order:
+            grp = buckets[k]
+            node = GroupNode(
+                field=current,
+                key=k,
+                caption="" if k is None else str(k),
+                level=level,
+                count=len(grp),
+                subtotals=column_totals(grp, value_aggs),
+            )
+            if len(levels) > 1:
+                node.groups = build(grp, levels[1:], level + 1)
+            else:
+                node.rows = grp
+            nodes.append(node)
+        _sort_nodes(nodes, sort_by, tf, descending)
+        return nodes
+
+    return build(rows, group_by, 0)
+
+
+def flatten_group_rows(
+    nodes: list[GroupNode], detail_fields: list[str]
+) -> list[dict[str, Any]]:
+    """Flatten a group tree into aggrid-ready rows tagged for rendering.
+
+    Emits, per node: a ``group`` header row (caption + count), the detail rows
+    (deepest level only), then a ``subtotal`` row carrying the aggregates. Each
+    row has ``_type`` (group|detail|subtotal) and ``_level`` for indentation.
+    """
+    out: list[dict[str, Any]] = []
+    for node in nodes:
+        header: dict[str, Any] = {
+            "_type": "group",
+            "_level": node.level,
+            "_group": f"{node.field}: {node.caption}",
+            "_count": node.count,
+        }
+        out.append(header)
+        if node.groups:
+            out.extend(flatten_group_rows(node.groups, detail_fields))
+        else:
+            for r in node.rows:
+                detail: dict[str, Any] = {"_type": "detail", "_level": node.level + 1}
+                for f in detail_fields:
+                    detail[f] = r.get(f)
+                out.append(detail)
+        subtotal: dict[str, Any] = {
+            "_type": "subtotal",
+            "_level": node.level,
+            "_group": f"Subtotal {node.caption}",
+        }
+        subtotal.update(node.subtotals)
+        out.append(subtotal)
+    return out
+

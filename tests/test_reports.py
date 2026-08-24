@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import pytest
 from sqlalchemy import Engine, MetaData
@@ -17,7 +18,9 @@ from dbvisual.app.report_service import (
     column_totals,
     ensure_readonly,
     filter_rows,
+    flatten_group_rows,
     full_text_filter,
+    group_with_subtotals,
     load_report_rows,
     resolve_param_options,
     run_custom_sql,
@@ -194,6 +197,83 @@ def test_custom_sql_rejects_writes() -> None:
 def test_custom_sql_run_rejects_write(engine: Engine) -> None:
     with pytest.raises(ValueError):
         run_custom_sql(engine, "DELETE FROM orders WHERE id = 10")
+
+
+# --- grouping with subtotals -----------------------------------------------
+
+
+def _grouping_rows() -> list[dict[str, Any]]:
+    return [
+        {"region": "North", "product": "A", "city": "Rome", "amount": 100},
+        {"region": "North", "product": "A", "city": "Milan", "amount": 40},
+        {"region": "North", "product": "B", "city": "Rome", "amount": 30},
+        {"region": "South", "product": "A", "city": "Bari", "amount": 200},
+        {"region": "South", "product": "B", "city": "Bari", "amount": 10},
+    ]
+
+
+def test_group_single_level_subtotals() -> None:
+    tree = group_with_subtotals(
+        _grouping_rows(), ["region"], {"amount": "sum"}
+    )
+    by_region = {n.key: n for n in tree}
+    assert by_region["North"].subtotals == {"amount": 170.0}
+    assert by_region["South"].subtotals == {"amount": 210.0}
+    assert by_region["North"].count == 3
+    # deepest level exposes the detail rows
+    assert len(by_region["South"].rows) == 2
+
+
+def test_group_multi_level_nesting() -> None:
+    tree = group_with_subtotals(
+        _grouping_rows(), ["region", "product"], {"amount": "sum", "city": "count"}
+    )
+    north = next(n for n in tree if n.key == "North")
+    prods = {g.key: g for g in north.groups}
+    assert prods["A"].subtotals["amount"] == 140.0
+    assert prods["A"].subtotals["city"] == 2.0
+    assert prods["B"].subtotals["amount"] == 30.0
+    # detail rows live at the deepest level only
+    assert north.rows == []
+    assert len(prods["A"].rows) == 2
+
+
+def test_group_sort_by_total_descending() -> None:
+    tree = group_with_subtotals(
+        _grouping_rows(),
+        ["region"],
+        {"amount": "sum"},
+        sort_by="total",
+        descending=True,
+    )
+    assert [n.key for n in tree] == ["South", "North"]
+
+
+def test_group_sort_by_caption() -> None:
+    tree = group_with_subtotals(_grouping_rows(), ["region"], {"amount": "sum"})
+    assert [n.key for n in tree] == ["North", "South"]
+
+
+def test_group_consistent_with_full_text_filter() -> None:
+    rows = full_text_filter(_grouping_rows(), "rome", ["city"])
+    tree = group_with_subtotals(rows, ["region"], {"amount": "sum"})
+    assert len(tree) == 1
+    assert tree[0].key == "North"
+    assert tree[0].subtotals == {"amount": 130.0}
+
+
+def test_flatten_group_rows_markers() -> None:
+    tree = group_with_subtotals(_grouping_rows(), ["region"], {"amount": "sum"})
+    flat = flatten_group_rows(tree, ["city", "amount"])
+    types = [r["_type"] for r in flat]
+    assert types[0] == "group"
+    assert "detail" in types
+    assert types[-1] == "subtotal"
+    subtotals = [r for r in flat if r["_type"] == "subtotal"]
+    assert subtotals[0]["amount"] == 170.0
+    # detail rows carry only requested fields plus the render markers
+    detail = next(r for r in flat if r["_type"] == "detail")
+    assert set(detail) == {"_type", "_level", "city", "amount"}
 
 
 # --- smoke -----------------------------------------------------------------
