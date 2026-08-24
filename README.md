@@ -4,7 +4,7 @@
 [![Python](https://img.shields.io/badge/Python-3.11%2B-blue.svg)](https://www.python.org/)
 [![UI: NiceGUI](https://img.shields.io/badge/UI-NiceGUI%203.x-0b7285.svg)](https://nicegui.io/)
 [![SQLAlchemy](https://img.shields.io/badge/SQLAlchemy-2.0-c72e49.svg)](https://www.sqlalchemy.org/)
-[![Tests](https://img.shields.io/badge/tests-177%20passing-brightgreen.svg)](#running-the-tests)
+[![Tests](https://img.shields.io/badge/tests-passing-brightgreen.svg)](#running-the-tests)
 
 A **local**, self-contained application to build **forms, sheets (grids) and reports**
 over existing databases, in the spirit of Visual DB. It runs entirely on the installation
