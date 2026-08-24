@@ -1,5 +1,11 @@
 # dbvisual
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/Python-3.11%2B-blue.svg)](https://www.python.org/)
+[![UI: NiceGUI](https://img.shields.io/badge/UI-NiceGUI%203.x-0b7285.svg)](https://nicegui.io/)
+[![SQLAlchemy](https://img.shields.io/badge/SQLAlchemy-2.0-c72e49.svg)](https://www.sqlalchemy.org/)
+[![Tests](https://img.shields.io/badge/tests-177%20passing-brightgreen.svg)](#running-the-tests)
+
 A **local**, self-contained application to build **forms, sheets (grids) and reports**
 over existing databases, in the spirit of Visual DB. It runs entirely on the installation
 machine: no cloud, no remote account, no multi-tenancy. The *target* databases may be local
@@ -11,6 +17,12 @@ reports are just different *renders* of the same specification.
 **Monolithic application**: a single Python codebase (UI = [NiceGUI](https://nicegui.io/)),
 a single process, a single executable. The same code runs as a **native desktop window** or
 as a local **web app** on `127.0.0.1`. No separate frontend/backend, no JS build.
+
+<!-- Add a screenshot to showcase the app, e.g. the Report page with grouping + subtotals:
+<p align="center">
+  <img src="docs/screenshot.png" alt="dbvisual report with grouping and subtotals" width="820">
+</p>
+-->
 
 ---
 
@@ -74,6 +86,18 @@ pip install -e ".[all-drivers]"     # all drivers at once
 ## Architecture
 
 Monolithic NiceGUI app. Layers:
+
+```mermaid
+flowchart TD
+    UI["dbvisual/app<br/>NiceGUI UI: shell, pages, components, services"]
+    META["dbvisual/meta<br/>metadata store (SQLite) - secrets (keyring/Fernet) - attachments"]
+    CORE["dbvisual/core<br/>connections - introspect - queryspec - compiler - crud - schema_ddl"]
+    DB[("Target databases<br/>PostgreSQL - MySQL - SQL Server - Oracle - SQLite - DuckDB")]
+
+    UI --> META
+    UI --> CORE
+    CORE --> DB
+```
 
 - `dbvisual/core/` - DB-agnostic engine (SQLAlchemy Core 2.0):
   - `connections.py` - multi-dialect `Engine` creation + connection test; optional
@@ -228,3 +252,9 @@ PyInstaller temporary folder.
 ## Full specification
 
 The authoritative specification lives in [docs/spec.md](docs/spec.md).
+
+---
+
+## License
+
+Released under the [MIT License](LICENSE).
