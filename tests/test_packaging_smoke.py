@@ -23,6 +23,8 @@ from dbvisual.core.connections import (
     ConnectionConfig,
     build_engine,
     encryption_supported,
+)
+from dbvisual.core.connections import (
     test_connection as check_connection,
 )
 from dbvisual.meta.store import default_db_path

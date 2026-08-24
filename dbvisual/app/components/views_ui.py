@@ -9,7 +9,8 @@ and an ``apply_config`` callback (applies a chosen config).
 
 from __future__ import annotations
 
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from nicegui import ui
 

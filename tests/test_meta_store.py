@@ -153,4 +153,3 @@ def test_delete_definition_cascades_views(store: MetadataStore) -> None:
     assert len(store.list_views(def_id)) == 1
     store.delete_definition(def_id)
     assert store.list_views(def_id) == []
-

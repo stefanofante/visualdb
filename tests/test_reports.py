@@ -213,9 +213,7 @@ def _grouping_rows() -> list[dict[str, Any]]:
 
 
 def test_group_single_level_subtotals() -> None:
-    tree = group_with_subtotals(
-        _grouping_rows(), ["region"], {"amount": "sum"}
-    )
+    tree = group_with_subtotals(_grouping_rows(), ["region"], {"amount": "sum"})
     by_region = {n.key: n for n in tree}
     assert by_region["North"].subtotals == {"amount": 170.0}
     assert by_region["South"].subtotals == {"amount": 210.0}

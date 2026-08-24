@@ -89,9 +89,7 @@ def _roundtrip(url: str) -> None:
 
         # optimistic locking: stale expected value must raise
         with pytest.raises(ConflictError):
-            update_record(
-                engine, table, {"id": 1}, {"qty": 99}, expected={"qty": 999}
-            )
+            update_record(engine, table, {"id": 1}, {"qty": 99}, expected={"qty": 999})
         # correct expected value updates the row
         affected = update_record(
             engine, table, {"id": 1}, {"qty": 42}, expected={"qty": 3}

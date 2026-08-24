@@ -108,4 +108,3 @@ views = Table(
     # Email/identity of the owner; used to filter private views.
     SAColumn("owner_identity", String(320), nullable=True),
 )
-

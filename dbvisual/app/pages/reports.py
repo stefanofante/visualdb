@@ -275,31 +275,31 @@ def report_viewer(definition_id: int) -> None:
             .props("dense clearable")
             .classes("w-72")
         )
-        with ui.expansion("Grouping and subtotals", icon="table_rows").classes(
-            "w-full"
+        with (
+            ui.expansion("Grouping and subtotals", icon="table_rows").classes("w-full"),
+            ui.row().classes("items-end gap-2 flex-wrap"),
         ):
-            with ui.row().classes("items-end gap-2 flex-wrap"):
-                group_sel = ui.select(
-                    [], label="Group by (levels)", multiple=True
-                ).classes("w-64")
-                gval_sel = ui.select([], label="Subtotal field").classes("w-40")
-                gagg_sel = ui.select(
-                    ["sum", "avg", "count", "min", "max"], value="sum", label="Aggregate"
-                ).classes("w-32")
-                gsort_sel = ui.select(
-                    {"caption": "Caption", "total": "Subtotal"},
-                    value="caption",
-                    label="Sort groups by",
-                ).classes("w-40")
-                gdesc = ui.switch("Descending")
-                ui.button(
-                    "Apply grouping",
-                    icon="playlist_add_check",
-                    on_click=lambda: apply_grouping(),
-                ).props("color=primary")
-                ui.button("Clear", icon="clear", on_click=lambda: clear_grouping()).props(
-                    "flat"
-                )
+            group_sel = ui.select([], label="Group by (levels)", multiple=True).classes(
+                "w-64"
+            )
+            gval_sel = ui.select([], label="Subtotal field").classes("w-40")
+            gagg_sel = ui.select(
+                ["sum", "avg", "count", "min", "max"], value="sum", label="Aggregate"
+            ).classes("w-32")
+            gsort_sel = ui.select(
+                {"caption": "Caption", "total": "Subtotal"},
+                value="caption",
+                label="Sort groups by",
+            ).classes("w-40")
+            gdesc = ui.switch("Descending")
+            ui.button(
+                "Apply grouping",
+                icon="playlist_add_check",
+                on_click=lambda: apply_grouping(),
+            ).props("color=primary")
+            ui.button("Clear", icon="clear", on_click=lambda: clear_grouping()).props(
+                "flat"
+            )
 
         grid_box = ui.column().classes("w-full")
         chart_box = ui.column().classes("w-full")

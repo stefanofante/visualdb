@@ -26,8 +26,8 @@ from dbvisual.app.report_service import (
 )
 
 __all__ = [
-    "snapshot_dir",
     "render_html",
+    "snapshot_dir",
     "write_html_snapshot",
     "write_xlsx_snapshot",
 ]
@@ -92,7 +92,9 @@ def render_html(
         f"<div class='meta'>Snapshot generated {generated} - {len(rows)} rows</div>"
     )
     if group_by:
-        body = _html_grouped(fields, rows, group_by, value_aggs or {}, sort_by, descending)
+        body = _html_grouped(
+            fields, rows, group_by, value_aggs or {}, sort_by, descending
+        )
     else:
         body = _html_flat(fields, rows)
     return head + body + "</body></html>"
@@ -104,7 +106,9 @@ def _html_flat(fields: list[str], rows: list[dict[str, Any]]) -> str:
     for r in rows:
         cells = "".join(f"<td>{_cell(r.get(f))}</td>" for f in fields)
         body.append(f"<tr>{cells}</tr>")
-    return f"<table><thead><tr>{header}</tr></thead><tbody>{''.join(body)}</tbody></table>"
+    return (
+        f"<table><thead><tr>{header}</tr></thead><tbody>{''.join(body)}</tbody></table>"
+    )
 
 
 def _html_grouped(
@@ -136,7 +140,9 @@ def _html_grouped(
             else:
                 cells.append(f"<td>{_cell(r.get(c))}</td>")
         body.append(f"<tr class='{kind}'>{''.join(cells)}</tr>")
-    return f"<table><thead><tr>{header}</tr></thead><tbody>{''.join(body)}</tbody></table>"
+    return (
+        f"<table><thead><tr>{header}</tr></thead><tbody>{''.join(body)}</tbody></table>"
+    )
 
 
 def write_html_snapshot(

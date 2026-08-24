@@ -9,7 +9,8 @@ with bound parameters. Nothing here writes to the target database.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field as dc_field
+from dataclasses import dataclass
+from dataclasses import field as dc_field
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
@@ -23,23 +24,23 @@ from dbvisual.core.compiler import compile_select
 from dbvisual.core.queryspec import QuerySpec
 
 __all__ = [
-    "ReportParam",
     "FilterCondition",
     "FilterGroup",
+    "GroupNode",
+    "ReportParam",
     "ReportSpec",
-    "resolve_engine",
-    "load_report_rows",
-    "run_custom_sql",
-    "ensure_readonly",
-    "resolve_param_options",
-    "evaluate_filter",
-    "filter_rows",
-    "full_text_filter",
     "aggregate_summary",
     "column_totals",
-    "GroupNode",
-    "group_with_subtotals",
+    "ensure_readonly",
+    "evaluate_filter",
+    "filter_rows",
     "flatten_group_rows",
+    "full_text_filter",
+    "group_with_subtotals",
+    "load_report_rows",
+    "resolve_engine",
+    "resolve_param_options",
+    "run_custom_sql",
 ]
 
 Agg = Literal["sum", "avg", "count", "min", "max"]
@@ -83,7 +84,7 @@ class FilterGroup(BaseModel):
 
     kind: Literal["group"] = "group"
     op: Literal["and", "or"] = "and"
-    children: list["FilterCondition | FilterGroup"] = Field(default_factory=list)
+    children: list[FilterCondition | FilterGroup] = Field(default_factory=list)
 
 
 FilterGroup.model_rebuild()
@@ -102,7 +103,7 @@ class ReportSpec(BaseModel):
         return self.model_dump_json()
 
     @classmethod
-    def from_json(cls, raw: str) -> "ReportSpec":
+    def from_json(cls, raw: str) -> ReportSpec:
         return cls.model_validate_json(raw)
 
 
@@ -215,7 +216,7 @@ def _match_condition(cond: FilterCondition, row: dict[str, Any]) -> bool:
     return False
 
 
-def evaluate_filter(node: "FilterCondition | FilterGroup", row: dict[str, Any]) -> bool:
+def evaluate_filter(node: FilterCondition | FilterGroup, row: dict[str, Any]) -> bool:
     """Evaluate a (possibly nested) filter node against a row."""
     if isinstance(node, FilterGroup):
         results = [evaluate_filter(child, row) for child in node.children]
@@ -226,7 +227,7 @@ def evaluate_filter(node: "FilterCondition | FilterGroup", row: dict[str, Any]) 
 
 
 def filter_rows(
-    rows: list[dict[str, Any]], node: "FilterCondition | FilterGroup | None"
+    rows: list[dict[str, Any]], node: FilterCondition | FilterGroup | None
 ) -> list[dict[str, Any]]:
     """Return only the rows satisfying the filter tree (grid-side filtering)."""
     if node is None:
@@ -363,7 +364,7 @@ class GroupNode:
     level: int
     count: int
     subtotals: dict[str, float]
-    groups: list["GroupNode"] = dc_field(default_factory=list)
+    groups: list[GroupNode] = dc_field(default_factory=list)
     rows: list[dict[str, Any]] = dc_field(default_factory=list)
 
 
@@ -372,9 +373,7 @@ def _sort_nodes(
 ) -> None:
     if sort_by == "total":
         tf = total_field
-        nodes.sort(
-            key=lambda n: (n.subtotals.get(tf, 0.0) if tf else 0.0), reverse=desc
-        )
+        nodes.sort(key=lambda n: n.subtotals.get(tf, 0.0) if tf else 0.0, reverse=desc)
     else:
         nodes.sort(key=lambda n: n.caption.lower(), reverse=desc)
 
@@ -399,7 +398,9 @@ def group_with_subtotals(
         return []
     tf = total_field or (next(iter(value_aggs)) if value_aggs else None)
 
-    def build(subset: list[dict[str, Any]], levels: list[str], level: int) -> list[GroupNode]:
+    def build(
+        subset: list[dict[str, Any]], levels: list[str], level: int
+    ) -> list[GroupNode]:
         current = levels[0]
         buckets: dict[Any, list[dict[str, Any]]] = {}
         order: list[Any] = []
@@ -465,4 +466,3 @@ def flatten_group_rows(
         subtotal.update(node.subtotals)
         out.append(subtotal)
     return out
-
