@@ -13,10 +13,10 @@ from typing import Literal
 from nicegui import ui
 
 from dbvisual.app import state as app_state
+from dbvisual.app.pages import about as _about  # noqa: F401
 
 # Importing the page modules registers their routes with NiceGUI.
 from dbvisual.app.pages import applications as _applications  # noqa: F401
-from dbvisual.app.pages import about as _about  # noqa: F401
 from dbvisual.app.pages import connections as _connections  # noqa: F401
 from dbvisual.app.pages import forms as _forms  # noqa: F401
 from dbvisual.app.pages import master_detail as _master_detail  # noqa: F401
