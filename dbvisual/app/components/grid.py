@@ -55,11 +55,17 @@ class SheetGrid:
         rules: dict[str, FieldRule] | None = None,
         formulas: dict[str, str] | None = None,
         totals: dict[str, str] | None = None,
+        attachment_fields: list[str] | None = None,
+        attachments: Any | None = None,
+        app_id: int = 0,
     ) -> None:
         self.view = view
         self.rules = rules or {}
         self.formulas = formulas or {}
         self.totals = totals or {}
+        self.attachment_fields = attachment_fields or []
+        self._attachments = attachments
+        self._app_id = app_id
         self._id_seq = 0
         self.rows: list[dict[str, Any]] = [self._prepare(dict(r)) for r in rows]
         self._by_id: dict[str, dict[str, Any]] = {r["__id__"]: r for r in self.rows}
@@ -173,6 +179,10 @@ class SheetGrid:
             ui.button(icon="download", on_click=self.export_csv).props(
                 "flat dense"
             ).tooltip("Esporta CSV")
+            if self.attachment_fields and self._attachments is not None:
+                ui.button(
+                    icon="attach_file", on_click=self._attachments_dialog
+                ).props("flat dense").tooltip("Allegati (riga selezionata)")
             groupable = {c.field: c.header for c in self.view.columns}
             self._group = (
                 ui.select(groupable, label="Raggruppa per", multiple=True)
@@ -237,11 +247,85 @@ class SheetGrid:
             return
         for rid in ids:
             if rid in self._existing_ids:
-                self._deleted.append(self._by_id[rid])
+                row = self._by_id[rid]
+                self._deleted.append(row)
+                self._cascade_attachments(row)
             self._dirty_ids.discard(rid)
         self.rows = [r for r in self.rows if r.get("__id__") not in ids]
         self._by_id = {r["__id__"]: r for r in self.rows}
         self.grid.update()
+
+    # -- attachments --------------------------------------------------------
+
+    def _cascade_attachments(self, row: dict[str, Any]) -> None:
+        """Delete the on-disk files of a removed row (cascade)."""
+        if not self.attachment_fields or self._attachments is None:
+            return
+        from dbvisual.app.sheet_attachments import cascade_delete_row, record_key
+
+        cascade_delete_row(self._attachments, self._app_id, record_key(self.view, row))
+
+    async def _attachments_dialog(self) -> None:
+        """Manage attachments of the selected row's first attachment field."""
+        from dbvisual.app.sheet_attachments import (
+            add_attachment,
+            attachment_summary,
+            record_key,
+            remove_attachment,
+        )
+        from dbvisual.meta.attachments import load_metadata
+
+        selected = await self.grid.get_selected_rows()
+        if len(selected) != 1:
+            ui.notify("Select exactly one row.", type="warning")
+            return
+        row = self._by_id.get(selected[0]["__id__"])
+        if row is None:
+            return
+        field = self.attachment_fields[0]
+        key = record_key(self.view, row)
+
+        with ui.dialog() as dialog, ui.card().classes("w-[520px] gap-2"):
+            ui.label(f"Attachments - {field}").classes("text-lg font-semibold")
+            listing = ui.column().classes("w-full gap-1")
+
+            def render() -> None:
+                listing.clear()
+                with listing:
+                    for meta in load_metadata(row.get(field)):
+                        with ui.row().classes("items-center gap-2"):
+                            ui.icon("attach_file")
+                            ui.label(f"{meta['filename']} ({meta['size']} B)").classes(
+                                "text-sm"
+                            )
+                            ui.button(
+                                icon="delete", on_click=lambda m=meta: _remove(m)
+                            ).props("flat dense color=negative size=sm")
+
+            def _remove(meta: dict[str, Any]) -> None:
+                row[field] = remove_attachment(
+                    self._attachments, self._app_id, key, row.get(field), meta["id"]
+                )
+                self._dirty_ids.add(row["__id__"]) if row["__id__"] in self._existing_ids else None
+                self.grid.update()
+                render()
+
+            def _on_upload(event: Any) -> None:
+                row[field] = add_attachment(
+                    self._attachments, self._app_id, key, row.get(field),
+                    event.name, event.content.read(),
+                    getattr(event, "type", "application/octet-stream"),
+                )
+                if row["__id__"] in self._existing_ids:
+                    self._dirty_ids.add(row["__id__"])
+                self.grid.update()
+                render()
+
+            render()
+            ui.upload(on_upload=_on_upload, auto_upload=True).classes("w-full")
+            ui.label(attachment_summary(row.get(field))).classes("text-xs text-gray-500")
+            ui.button("Close", on_click=dialog.close).props("flat")
+        dialog.open()
 
     def collect_changes(
         self,

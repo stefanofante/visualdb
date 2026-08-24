@@ -35,6 +35,7 @@ from dbvisual.core.introspect import (
     list_tables,
 )
 from dbvisual.core.queryspec import QuerySpec
+from dbvisual.meta.attachments import AttachmentStore
 
 
 def _build_queryspec(
@@ -309,7 +310,13 @@ def sheet_editor(definition_id: int) -> None:
                     on_click=lambda: ui.navigate.to("/sheets"),
                 ).props("flat")
 
-        grid = SheetGrid(view, rows)
+        grid = SheetGrid(
+            view,
+            rows,
+            attachment_fields=sheet_spec.attachment_fields,
+            attachments=AttachmentStore(),
+            app_id=definition["app_id"],
+        )
 
         def save() -> None:
             if grid.has_errors():

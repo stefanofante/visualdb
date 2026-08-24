@@ -13,7 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import Engine, MetaData, Table
 
 from dbvisual.core.compiler import compile_select
@@ -44,6 +44,7 @@ class SheetSpec(BaseModel):
     connection_id: int
     spec: QuerySpec
     rls: bool = False  # Postgres row-level security (Phase 8); ignored otherwise.
+    attachment_fields: list[str] = Field(default_factory=list)  # Task 1: attachment columns
 
     def to_json(self) -> str:
         """Serialize to the JSON string stored in ``definitions.queryspec_json``."""
