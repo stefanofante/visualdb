@@ -117,8 +117,15 @@ fields. Transactional save with optimistic locking.
 
 ### Report (read-only)
 Query builder or read-only custom SQL (`ensure_readonly`). Multi-value and cascading
-parameters, nested AND/OR filters, summary/pivot aggregation, group subtotals, full-text
-search, and embedded `ui.echart` charts (bar, line/time-series with zoom, pie). CSV export.
+parameters, nested AND/OR filters, summary/pivot aggregation, and **multi-level grouping with
+subtotals** (sum/avg/count/min/max, groups sortable by caption or subtotal), full-text search,
+and embedded `ui.echart` charts (bar, line/time-series with zoom, pie). CSV export plus
+point-in-time **snapshots** (self-contained HTML and Excel, including group subtotals).
+
+### Saved views
+Sheets and reports can save named **views** (search, grouping and column config) as
+`private` (visible only to the current identity), `shared` (visible to everyone), or `locked`
+(immutable). Stored in the local metadata store; reload or delete them from the *Views* dialog.
 
 ### Master-detail
 A master form plus one or more linked detail grids. The detail query has exactly one
@@ -196,9 +203,10 @@ $env:DBVISUAL_TEST_ORACLE_URL   = "oracle+oracledb://user:pass@localhost/?servic
 pytest tests/test_integration_dialects.py
 ```
 
-Each test exercises only existing APIs: `build_engine` + `test_connection`, reflection +
-`detect_foreign_keys`, `compile_select` with a join and a parametric filter, CRUD with
-optimistic locking, and (where privileges allow) a create/drop table via `schema_ddl`.
+Each test exercises only existing APIs end-to-end: a create table via `schema_ddl`
+(`compose_create_table` + `execute_ddl`), reflection (`reflect_schema` / `get_columns`), CRUD
+with **optimistic locking** (`insert_record` / `update_record` / `delete_record`), a
+`compile_select` read-back, and a final drop table.
 
 ---
 

@@ -173,6 +173,10 @@ Modern layout, designed for daily use by non-technical users.
 - **Settings** *(DONE)*: `/settings` page as the **single source** of configuration - AI
   (provider/model/API key via `meta/secrets`), RLS identity (`app/identity`) and general options;
   it orchestrates the existing modules without duplicating them.
+- **Post-phase enhancements** *(DONE, 177 green tests + 5 gated skips)*: sheet attachment column,
+  report **grouping with multi-level subtotals**, **saved views** (private/shared/locked),
+  point-in-time **snapshots** (self-contained HTML + Excel), **gated multi-dialect integration
+  tests**, and **packaging** with `nicegui-pack` (see section 10).
 
 ## 9. Non-functional requirements
 
@@ -432,3 +436,50 @@ Modern layout, designed for daily use by non-technical users.
   (`platformdirs`) shown read-only for transparency (metadata store, attachments, secrets vault).
 - The contextual AI dialogs (`app/ai/ui.py`) read/write the **same** config and the same secrets
   as the Settings page.
+
+### Report grouping with subtotals
+
+- `report_service.group_with_subtotals(rows, group_by, value_aggs, sort_by, descending)` builds a
+  multi-level group tree over already filtered rows (so it stays consistent with
+  `full_text_filter`/`filter_rows`); per-group subtotals use sum/avg/count/min/max.
+- Groups are ordered by **caption** or by the **subtotal** of a chosen field.
+- `flatten_group_rows(tree, detail_fields)` produces aggrid-ready rows tagged with `_type`
+  (`group`/`detail`/`subtotal`) and `_level` for indentation; the report page renders group header,
+  detail and bold subtotal rows in a community `ui.aggrid`.
+
+### Saved views (Sheet & Report)
+
+- New `views` table in the metadata store: `definition_id`, `name`, `scope` (`private`/`shared`),
+  `locked`, `config_json`, `owner_identity`.
+- **Private** views are filtered by the current identity (match / non-match / empty); **shared**
+  views are visible to everyone. A **locked** view is immutable (updates are refused until it is
+  unlocked). `config_json` round-trips arbitrary view config (filters, grouping, columns, search).
+- A generic `components/views_ui.py` dialog captures the current config and applies a chosen one;
+  the Sheet grid persists search + group-by, the Report persists search + grouping settings.
+
+### Snapshots (point-in-time)
+
+- `app/snapshot_service.py` freezes the current rows into portable artifacts under the
+  `snapshots/` folder in the user data dir:
+  - **HTML** - a single self-contained file (inline style and data, no external assets, no DB),
+    reflecting exactly what is on screen including group subtotals;
+  - **Excel** - an `.xlsx` workbook (openpyxl) with detail rows and, when grouping is active,
+    group header and subtotal rows.
+
+### Multi-dialect integration tests (gated)
+
+- `tests/test_integration_dialects.py` runs an end-to-end round-trip (DDL create -> CRUD with
+  optimistic locking -> introspection -> compiled SELECT -> drop) against real servers.
+- Enabled only when the matching env var holds a SQLAlchemy URL, otherwise **skipped**:
+  `DBVISUAL_TEST_POSTGRES_URL`, `DBVISUAL_TEST_MYSQL_URL`, `DBVISUAL_TEST_MSSQL_URL`,
+  `DBVISUAL_TEST_ORACLE_URL`.
+
+### Packaging
+
+- `docs/packaging.md` documents the `nicegui-pack` build (entrypoint `main.py`), the required
+  **hidden imports** (DB drivers, `duckdb`, `keyring`, `cryptography`, `openpyxl`, AI modules) and
+  an 8-item manual acceptance checklist.
+- User data resolves via `platformdirs`, **independent of** the PyInstaller bundle dir
+  (`sys._MEIPASS`); SQLCipher degrades gracefully when absent. Guarded by
+  `tests/test_packaging_smoke.py`.
+
