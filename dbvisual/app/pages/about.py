@@ -60,8 +60,7 @@ def about_page() -> None:
             with ui.row().classes("items-center gap-2"):
                 ui.icon("balance")
                 ui.label(
-                    "Released under the MIT License. "
-                    "Copyright (c) 2026 Stefano Fante."
+                    "Released under the MIT License. Copyright (c) 2026 Stefano Fante."
                 ).classes("text-sm")
 
         # --- credits -------------------------------------------------------
@@ -90,4 +89,3 @@ def about_page() -> None:
                 ui.link("Source code on GitHub", _REPO_URL, new_tab=True)
 
         ui.label("© 2026 Stefano Fante - ST-LINE").classes("text-xs text-gray-400")
-
