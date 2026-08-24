@@ -181,6 +181,12 @@ review and validated by `ensure_readonly`; it is never executed automatically.
 Single source of truth: AI (provider/model/API key status), identity/RLS email, and general
 options (preferred startup mode, user data directory shown read-only).
 
+### Help and About
+In-app **Help** page (Help button in the header): a self-contained, navigable HTML manual
+covering installation, per-dialect database configuration and every page button by button.
+The **About** page (`/about`) shows the description, author, credits, MIT license and links to
+the site, the online manual and the source code.
+
 ---
 
 ## Encrypted local file databases
