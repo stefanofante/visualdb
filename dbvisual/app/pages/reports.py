@@ -26,6 +26,7 @@ from dbvisual.app.report_service import (
     resolve_engine,
 )
 from dbvisual.app.shell import frame
+from dbvisual.app.snapshot_service import write_html_snapshot, write_xlsx_snapshot
 from dbvisual.app.state import get_state
 from dbvisual.core.introspect import detect_foreign_keys, get_columns, list_tables
 
@@ -450,6 +451,28 @@ def report_viewer(definition_id: int) -> None:
             if state_holder["rows"]:
                 render(_current_rows())
 
+        def _snapshot(fmt: str) -> None:
+            if not state_holder["rows"]:
+                ui.notify("Load the data first.", type="warning")
+                return
+            rows = _current_rows()
+            group_by = list(group_sel.value or [])
+            value_aggs = (
+                {gval_sel.value: gagg_sel.value}
+                if (group_by and gval_sel.value)
+                else {}
+            )
+            kwargs = dict(
+                group_by=group_by or None,
+                value_aggs=value_aggs,
+                sort_by=gsort_sel.value,
+                descending=bool(gdesc.value),
+            )
+            writer = write_html_snapshot if fmt == "html" else write_xlsx_snapshot
+            path = writer(definition["name"], state_holder["fields"], rows, **kwargs)
+            ui.download(str(path))
+            ui.notify(f"Snapshot saved: {path.name}", type="positive")
+
         with ui.row().classes("gap-2"):
             ui.button("Load data", icon="play_arrow", on_click=load).props(
                 "color=primary"
@@ -460,6 +483,16 @@ def report_viewer(definition_id: int) -> None:
                 on_click=lambda: open_views_dialog(
                     definition_id, _capture_view, _apply_view
                 ),
+            ).props("outline")
+            ui.button(
+                "Snapshot HTML",
+                icon="html",
+                on_click=lambda: _snapshot("html"),
+            ).props("outline")
+            ui.button(
+                "Snapshot Excel",
+                icon="grid_on",
+                on_click=lambda: _snapshot("xlsx"),
             ).props("outline")
             ui.button(
                 "Back",
