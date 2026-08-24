@@ -13,6 +13,7 @@ from typing import Any
 from nicegui import ui
 
 from dbvisual.app.components.grid import SheetGrid
+from dbvisual.app.components.views_ui import open_views_dialog
 from dbvisual.app.components.webhooks_ui import open_webhooks_dialog
 from dbvisual.app.identity import get_identity
 from dbvisual.app.query_builder import build_queryspec
@@ -295,6 +296,15 @@ def sheet_editor(definition_id: int) -> None:
             ui.label(definition["name"]).classes("text-2xl font-bold")
             with ui.row().classes("gap-2"):
                 save_btn = ui.button("Save", icon="save").props("color=primary")
+                ui.button(
+                    "Views",
+                    icon="bookmark",
+                    on_click=lambda: open_views_dialog(
+                        definition["id"],
+                        grid.capture_view,
+                        grid.apply_view,
+                    ),
+                ).props("flat")
                 ui.button(
                     "Webhook",
                     icon="webhook",

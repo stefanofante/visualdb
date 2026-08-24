@@ -212,6 +212,22 @@ class SheetGrid:
         self._set_quick_filter(text)
         self._recompute_totals()
 
+    def capture_view(self) -> dict[str, Any]:
+        """Return the current view config (search text and group-by fields)."""
+        return {
+            "search": self._search.value or "",
+            "group_by": list(self._group.value or []),
+        }
+
+    def apply_view(self, config: dict[str, Any]) -> None:
+        """Apply a saved view config (search text and group-by fields)."""
+        self._search.value = config.get("search", "")
+        group_by = config.get("group_by", [])
+        self._group.value = group_by
+        self._set_quick_filter(self._search.value)
+        self._apply_grouping(group_by)
+        self._recompute_totals()
+
     # -- editing state ------------------------------------------------------
 
     def _on_cell_changed(self, event: Any) -> None:

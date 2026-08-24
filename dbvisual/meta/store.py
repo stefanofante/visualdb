@@ -19,6 +19,7 @@ from dbvisual.meta.models import (
     connections,
     definitions,
     metadata,
+    views,
     webhooks,
 )
 
@@ -215,6 +216,7 @@ class MetadataStore:
             conn.execute(
                 delete(webhooks).where(webhooks.c.definition_id == definition_id)
             )
+            conn.execute(delete(views).where(views.c.definition_id == definition_id))
             result = conn.execute(
                 delete(definitions).where(definitions.c.id == definition_id)
             )
@@ -279,6 +281,94 @@ class MetadataStore:
             result = conn.execute(delete(webhooks).where(webhooks.c.id == webhook_id))
             return result.rowcount
 
+    # -- saved views --------------------------------------------------------
+
+    def create_view(
+        self,
+        definition_id: int,
+        name: str,
+        config: dict[str, Any],
+        *,
+        scope: str = "private",
+        locked: bool = False,
+        owner_identity: str | None = None,
+    ) -> int:
+        """Insert a saved view and return its new id.
+
+        ``scope`` is "private" (owner-only) or "shared". ``config`` is JSON-encoded.
+        """
+        with self.engine.begin() as conn:
+            result = conn.execute(
+                insert(views).values(
+                    definition_id=definition_id,
+                    name=name,
+                    scope=scope,
+                    locked=1 if locked else 0,
+                    config_json=json.dumps(config),
+                    owner_identity=owner_identity or None,
+                )
+            )
+            return int(result.inserted_primary_key[0])
+
+    def list_views(
+        self, definition_id: int, identity: str | None = None
+    ) -> list[dict[str, Any]]:
+        """Return the views visible for ``definition_id`` given ``identity``.
+
+        Shared views are always visible; private views only when their
+        ``owner_identity`` matches the given ``identity`` (empty matches empty).
+        """
+        want = identity or None
+        with self.engine.connect() as conn:
+            rows = conn.execute(
+                select(views)
+                .where(views.c.definition_id == definition_id)
+                .order_by(views.c.name)
+            ).mappings()
+            out = []
+            for r in rows:
+                data = self._decode_view(r)
+                if data["scope"] == "shared" or data["owner_identity"] == want:
+                    out.append(data)
+            return out
+
+    def get_view(self, view_id: int) -> dict[str, Any] | None:
+        """Return a single view by id, or ``None``."""
+        with self.engine.connect() as conn:
+            row = (
+                conn.execute(select(views).where(views.c.id == view_id))
+                .mappings()
+                .first()
+            )
+            return self._decode_view(row) if row else None
+
+    def update_view(self, view_id: int, **values: Any) -> int:
+        """Update view fields; ``config`` (dict) and ``locked`` (bool) are encoded.
+
+        A locked view is immutable: the update is refused (returns 0) unless the
+        change only clears the ``locked`` flag.
+        """
+        current = self.get_view(view_id)
+        if current is None:
+            return 0
+        if current["locked"] and values.get("locked") is not False:
+            return 0
+        if "config" in values:
+            values["config_json"] = json.dumps(values.pop("config"))
+        if "locked" in values:
+            values["locked"] = 1 if values["locked"] else 0
+        with self.engine.begin() as conn:
+            result = conn.execute(
+                update(views).where(views.c.id == view_id).values(**values)
+            )
+            return result.rowcount
+
+    def delete_view(self, view_id: int) -> int:
+        """Delete a view by id; return the affected row count."""
+        with self.engine.begin() as conn:
+            result = conn.execute(delete(views).where(views.c.id == view_id))
+            return result.rowcount
+
     # -- helpers ------------------------------------------------------------
 
     @staticmethod
@@ -295,4 +385,13 @@ class MetadataStore:
         data = dict(row)
         raw = data.get("events")
         data["events"] = json.loads(raw) if raw else []
+        return data
+
+    @staticmethod
+    def _decode_view(row: Any) -> dict[str, Any]:
+        """Convert a view row mapping into a dict with parsed config and bool flag."""
+        data = dict(row)
+        raw = data.get("config_json")
+        data["config"] = json.loads(raw) if raw else {}
+        data["locked"] = bool(data.get("locked"))
         return data

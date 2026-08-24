@@ -13,6 +13,7 @@ from typing import Any
 from nicegui import ui
 
 from dbvisual.app.ai.ui import ai_generate_dialog, ai_settings_dialog
+from dbvisual.app.components.views_ui import open_views_dialog
 from dbvisual.app.query_builder import build_queryspec
 from dbvisual.app.report_service import (
     ReportSpec,
@@ -429,10 +430,37 @@ def report_viewer(definition_id: int) -> None:
 
         search.on_value_change(lambda e: apply_search(e.value))
 
+        def _capture_view() -> dict[str, Any]:
+            return {
+                "search": search.value or "",
+                "group_by": list(group_sel.value or []),
+                "value": gval_sel.value,
+                "agg": gagg_sel.value,
+                "sort": gsort_sel.value,
+                "desc": bool(gdesc.value),
+            }
+
+        def _apply_view(cfg: dict[str, Any]) -> None:
+            search.value = cfg.get("search", "")
+            group_sel.value = cfg.get("group_by", [])
+            gval_sel.value = cfg.get("value")
+            gagg_sel.value = cfg.get("agg", "sum")
+            gsort_sel.value = cfg.get("sort", "caption")
+            gdesc.value = bool(cfg.get("desc", False))
+            if state_holder["rows"]:
+                render(_current_rows())
+
         with ui.row().classes("gap-2"):
             ui.button("Load data", icon="play_arrow", on_click=load).props(
                 "color=primary"
             )
+            ui.button(
+                "Views",
+                icon="bookmark",
+                on_click=lambda: open_views_dialog(
+                    definition_id, _capture_view, _apply_view
+                ),
+            ).props("outline")
             ui.button(
                 "Back",
                 icon="arrow_back",

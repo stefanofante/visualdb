@@ -87,3 +87,25 @@ webhooks = Table(
     # NOTE: the URL is a secret and is NOT stored here; it lives in SecretStore
     # under the key ``webhook:<id>`` (may contain tokens).
 )
+
+views = Table(
+    "views",
+    metadata,
+    SAColumn("id", Integer, primary_key=True, autoincrement=True),
+    SAColumn(
+        "definition_id",
+        Integer,
+        ForeignKey("definitions.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    SAColumn("name", String(200), nullable=False),
+    # "private" (visible only to the owner identity) or "shared" (everyone).
+    SAColumn("scope", String(20), nullable=False, default="private"),
+    # A locked view cannot be modified or overwritten (0/1).
+    SAColumn("locked", Integer, nullable=False, default=0),
+    # JSON blob with the saved view config (filters, grouping, columns, etc.).
+    SAColumn("config_json", Text, nullable=False),
+    # Email/identity of the owner; used to filter private views.
+    SAColumn("owner_identity", String(320), nullable=True),
+)
+
