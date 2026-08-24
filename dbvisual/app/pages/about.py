@@ -9,7 +9,7 @@ from dbvisual.app.shell import frame
 _SITE_URL = "https://www.stline.it"
 _WIKI_URL = "https://www.stline.it/wiki/visualdb/"
 _REPO_URL = "https://github.com/stefanofante/visualdb"
-_VERSION = "1.0.0.0"
+_VERSION = "1.1.0.0"
 
 # (name, purpose, url) for the third-party libraries the app is built on.
 _CREDITS: list[tuple[str, str, str]] = [

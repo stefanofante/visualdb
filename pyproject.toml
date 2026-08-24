@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dbvisual"
-version = "1.0.0.0"
+version = "1.1.0.0"
 description = "Local, self-contained visual builder for forms, sheets and reports over existing databases."
 readme = "README.md"
 requires-python = ">=3.11"
