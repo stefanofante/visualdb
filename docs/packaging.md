@@ -24,7 +24,8 @@ SmartScreen or macOS Gatekeeper may require a manual decision on a downloaded
 candidate. CI does not create a release or tag.
 
 For a local build, use 64-bit Python 3.12 on the target platform. On macOS
-verify that the interpreter reports arm64. Windows needs Inno Setup 6.
+install the ODBC driver manager with `brew install unixodbc` and verify that
+the interpreter reports arm64. Windows needs Inno Setup 6.
 From a virtual environment in the repository root run:
 
 ```text
