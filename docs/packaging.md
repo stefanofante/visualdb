@@ -1,91 +1,56 @@
-# Packaging dbvisual
+# Desktop packages
 
-dbvisual ships as a single local application. This guide covers producing a
-standalone, self-contained build with **nicegui-pack** (a thin wrapper over
-PyInstaller) and the manual acceptance checklist to run before shipping a build.
+The desktop build produces an installer for Windows x64 and a disk image
+containing a native application for macOS on Apple Silicon. Both include
+Python, NiceGUI, SQLite, DuckDB and the Python drivers in the all-drivers extra.
+SQL Server connections require a compatible system ODBC driver. SQLCipher is
+optional and is not bundled by the standard builds.
 
-## Prerequisites
+## Building a candidate
 
-- A clean virtual environment with the app and its runtime drivers installed:
+On GitHub, run **Desktop candidates** under **Actions**. It also runs when code,
+packaging scripts or tests change on master. The Windows and Mac runners execute
+the source suite, build a native application and start the frozen binary in
+loopback web mode to check its UI routes. Download the two workflow artifacts
+for the commit under test and extract the GitHub ZIP wrappers.
 
-  ```powershell
-  python -m venv .venv
-  .\.venv\Scripts\python.exe -m pip install -e ".[all-drivers]"
-  .\.venv\Scripts\python.exe -m pip install nicegui[pack]
-  ```
+| Target | Artifact | Installation |
+| --- | --- | --- |
+| Windows 10/11 x64 | DBVisual-Windows-x64-Setup.exe | Double-click the installer. It installs for the current user and creates a Start menu entry. The installer includes Microsoft's offline WebView2 runtime and runs it if needed. |
+| macOS Apple Silicon | DBVisual-macOS-arm64.dmg | Open the image, drag DBVisual into Applications and open it from there. |
 
-- Optional AI providers use plain HTTP (`requests`/`httpx` as configured) and no
-  extra native dependencies.
+Candidates use no publisher signing identity or Apple notarization. Windows
+SmartScreen or macOS Gatekeeper may require a manual decision on a downloaded
+candidate. CI does not create a release or tag.
 
-## Build command
+For a local build, use 64-bit Python 3.12 on the target platform. On macOS
+verify that the interpreter reports arm64. Windows needs Inno Setup 6.
+From a virtual environment in the repository root run:
 
-`main.py` is the entrypoint (native desktop window by default). Build with:
-
-```powershell
-nicegui-pack --onefile --name dbvisual main.py `
-  --add-data "dbvisual;dbvisual"
+```text
+python -m pip install ".[dev,all-drivers,packaging]"
+python -m pytest
+python scripts/build_desktop.py
+python scripts/smoke_desktop.py
 ```
 
-Because some dependencies are imported dynamically (SQLAlchemy dialects, the AI
-provider modules, keyring backends), pass them explicitly as hidden imports:
+On Windows run `packaging/build-windows.ps1` in PowerShell. It downloads the
+x64 standalone WebView2 installer and checks its Microsoft signature. Internet
+access is needed on the build machine. On the Mac the disk-image step in the
+workflow uses `ditto` and `hdiutil` on the generated app. Both installers are
+written under `dist/`.
 
-```powershell
-nicegui-pack --onefile --name dbvisual main.py `
-  --hidden-import psycopg `
-  --hidden-import pymysql `
-  --hidden-import pyodbc `
-  --hidden-import oracledb `
-  --hidden-import duckdb `
-  --hidden-import duckdb_engine `
-  --hidden-import keyring.backends.Windows `
-  --hidden-import keyring.backends.macOS `
-  --hidden-import keyring.backends.SecretService `
-  --hidden-import cryptography `
-  --hidden-import openpyxl `
-  --hidden-import dbvisual.app.ai.provider `
-  --hidden-import dbvisual.app.ai.settings `
-  --hidden-import dbvisual.app.ai.ui
-```
+## Installed-product acceptance
 
-Notes:
-
-- Include only the DB drivers you intend to ship; each adds size.
-- **SQLCipher** (`pysqlcipher3` / `sqlcipher3`) is optional and often has no
-  prebuilt wheel. If it is absent, encrypted-SQLite connections degrade
-  gracefully: `encryption_supported("sqlcipher")` returns `False` and attempting
-  such a connection raises a clear error instead of crashing. DuckDB native
-  encryption is unaffected.
-- User data (metadata DB, attachments, the secrets vault and snapshots) is
-  resolved via `platformdirs`, **not** the PyInstaller bundle dir (`sys._MEIPASS`).
-  This keeps writes in a stable, writable per-user location across runs. The
-  `tests/test_packaging_smoke.py` suite guards this property.
-
-## User data locations
-
-Everything the app persists lives under the platform user-data directory
-(shown in Settings): the metadata SQLite DB, uploaded attachments, the encrypted
-secrets vault fallback, and the `snapshots/` folder. The bundle itself stays
-read-only.
-
-## Manual acceptance checklist
-
-Run the produced executable and confirm each item:
-
-1. **Launch** — the desktop window opens (or `--mode web` serves on
-   `127.0.0.1:8080`) with no console errors.
-2. **Connections** — create a connection, run *Test*, *Save*, and *Browse schema*
-   against a real database.
-3. **Sheet** — open a sheet, edit cells, add/delete a row, save; verify optimistic
-   locking (a stale edit is rejected) and attachments upload/download.
-4. **Form** — navigate records, edit and save, delete a record (attachments
-   cascade), confirm validation and form rules fire.
-5. **Report** — load data, apply **grouping with subtotals**, sort groups by
-   caption and by subtotal, and confirm the full-text search stays consistent.
-6. **Saved views** — save a private and a shared view, reload them, and confirm a
-   locked view cannot be modified.
-7. **Snapshots** — export an HTML snapshot (opens standalone, shows subtotals) and
-   an Excel snapshot (detail rows + subtotal rows) into the snapshots folder.
-8. **Security & data dir** — confirm secrets are never written in clear text, the
-   user-data directory shown in Settings is writable and persists across restarts,
-   and (if built without SQLCipher) encrypted-SQLite fails with a clear message
-   while everything else keeps working.
+1. Install on Windows 10 x64 and on an Apple Silicon Mac with no system Python.
+   Open the application from Start or Applications.
+2. Create a SQLite database, save the connection, reopen the application and
+   browse its schema. Repeat with an existing database used in production.
+3. Save a form and a sheet, edit and delete a row, and confirm that a concurrent
+   edit produces a conflict with the local draft still visible.
+4. Upload, cancel, save, download and remove an attachment. Check the file
+   contents after restarting the application.
+5. Export grouped report data to HTML and Excel. Reopen both exports.
+6. Install the next build over the existing installation and confirm that saved
+   connections, secrets, definitions and attachments remain available in the
+   per-user data directory shown in Settings.

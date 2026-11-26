@@ -203,7 +203,7 @@ Optional passphrase-encrypted local file DBs:
 - The passphrase is a **secret** (`enckey:<id>`), never in clear text in the metadata store.
 
 > Packaging note: SQLCipher is not the standard SQLite; it must be installed separately and
-> bundled with `nicegui-pack`. DuckDB encryption needs no extra driver.
+> included explicitly in a custom PyInstaller build. DuckDB encryption needs no extra driver.
 
 ---
 
@@ -244,16 +244,10 @@ with **optimistic locking** (`insert_record` / `update_record` / `delete_record`
 
 ## Packaging (standalone executable)
 
-Build a standalone executable with `nicegui-pack` (a PyInstaller wrapper):
-
-```powershell
-nicegui-pack --onefile --name dbvisual main.py
-```
-
-See `docs/packaging.md` for the required hidden imports, bundled assets,
-and a manual acceptance checklist to run on the target OS. Metadata, attachments, secrets and
-snapshots always resolve via `platformdirs` (the user data directory), never inside the
-PyInstaller temporary folder.
+The [desktop build instructions](docs/packaging.md) cover the Windows x64 installer
+and the macOS Apple Silicon disk image. Both package Python with the application.
+Candidate builds and their test results are available from the
+[Desktop candidates workflow](https://github.com/stefanofante/visualdb/actions/workflows/desktop.yml).
 
 ---
 

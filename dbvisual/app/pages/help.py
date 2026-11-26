@@ -164,7 +164,7 @@ top to return.</div>
   <li><strong>Main table</strong>: the only writable table of a definition.</li>
   <li><strong>Related tables</strong>: read-only lookups joined for display.</li>
   <li><strong>Optimistic locking</strong>: if a record changed since you loaded it,
-  the save is refused and the data reloaded - retry.</li>
+  saving stops. Your edits stay visible until you choose to discard and reload.</li>
   <li><strong>Identity</strong>: an email used for PostgreSQL row-level security and
   to scope private saved views.</li>
 </ul>
@@ -326,8 +326,7 @@ add or drop a foreign key via ALTER.</div>
   <li><strong>Group by</strong> - group rows by one or more columns.</li>
 </ul>
 <div class="hlp-note">Only main-table columns are editable; related columns are
-read-only. If someone else changed a row, the save is refused and the grid
-reloaded - just retry.</div>
+read-only. If someone else changed a row, the save is refused. Read or copy your edits before choosing Discard edits and reload.</div>
 </section>
 
 <section id="forms">
@@ -437,7 +436,7 @@ applications are created inline when you save a sheet/form/report.</p>
 <h3>Identity / RLS</h3>
 <ul>
   <li><strong>Current identity (email)</strong> and
-  <span class="hlp-btn">Save identity</span>. Empty = RLS inactive.</li>
+  <span class="hlp-btn">Save identity</span>. RLS-enabled forms and sheets require an identity.</li>
 </ul>
 <h3>General</h3>
 <ul>
@@ -500,7 +499,7 @@ non-blocking HTTP POST (JSON) calls on create/update/delete.</p>
 <section id="rls">
 <h2>Row-level security (PostgreSQL)</h2>
 <p>RLS is delegated to PostgreSQL policies. dbvisual only passes the current
-identity via <code>SET app.current_user_email</code>. Enable it per definition
+identity in the session setting <code>app.current_user_email</code>. Enable it per definition
 (Postgres only) and set the identity email in Connections or Settings.</p>
 <div class="hlp-note">The connection role must be non-superuser and not the table
 owner, or PostgreSQL bypasses RLS.</div>
@@ -531,12 +530,10 @@ you.</div>
 
 <section id="packaging">
 <h2>Packaging (standalone executable)</h2>
-<p>Build a standalone executable with <code>nicegui-pack</code> (a PyInstaller
-wrapper):</p>
-<pre><code>nicegui-pack --onefile --name dbvisual main.py</code></pre>
-<p>See <code>docs/packaging.md</code> in the repository for the required hidden
-imports and an 8-item acceptance checklist. User data always resolves via the OS
-user directory, never inside the temporary bundle folder.</p>
+<p>The desktop candidates include Python. Use the x64 installer on Windows
+or drag the app from the disk image to Applications on an Apple Silicon Mac.
+Build instructions and installed-product checks are in <code>docs/packaging.md</code>.
+Settings shows the directory holding your data.</p>
 </section>
 
 <section id="faq">
@@ -545,7 +542,7 @@ user directory, never inside the temporary bundle folder.</p>
   <li><strong>Test connection fails with a missing driver</strong> - install the
   matching extra (see <a href="#dbconfig">Database configuration</a>).</li>
   <li><strong>Save is refused with a concurrency message</strong> - someone changed
-  the record; the data was reloaded, just retry.</li>
+  the record. The editor keeps your draft until you discard and reload.</li>
   <li><strong>RLS does not filter anything</strong> - set the identity email and make
   sure the Postgres role is non-superuser / non-owner.</li>
   <li><strong>Encrypted SQLite is unavailable</strong> - install

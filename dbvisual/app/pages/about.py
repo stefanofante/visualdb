@@ -4,12 +4,12 @@ from __future__ import annotations
 
 from nicegui import ui
 
+from dbvisual import __version__
 from dbvisual.app.shell import frame
 
 _SITE_URL = "https://www.stline.it"
 _WIKI_URL = "https://www.stline.it/wiki/visualdb/"
 _REPO_URL = "https://github.com/stefanofante/visualdb"
-_VERSION = "1.1.0.0"
 
 # (name, purpose, url) for the third-party libraries the app is built on.
 _CREDITS: list[tuple[str, str, str]] = [
@@ -49,7 +49,7 @@ def about_page() -> None:
                 "webhooks, PostgreSQL row-level security and an optional read-only "
                 "AI query assistant."
             ).classes("text-sm text-gray-600")
-            ui.label(f"Version {_VERSION}").classes("text-xs text-gray-500")
+            ui.label(f"Version {__version__}").classes("text-xs text-gray-500")
 
         # --- author & license ----------------------------------------------
         with ui.card().classes("w-full max-w-3xl gap-2"):

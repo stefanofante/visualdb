@@ -85,7 +85,7 @@ main.py                # entrypoint (--mode desktop | web)
 - **Metadata store**: local SQLite, file in the user directory
   (`~/.dbvisual/metadata.db` or the `platformdirs` equivalent).
 - **DB credentials**: `keyring` (OS keychain) with a `cryptography.Fernet` encrypted-file fallback.
-- **Packaging**: portable executable with **`nicegui-pack`** (based on PyInstaller); also
+- **Packaging**: portable executable with **PyInstaller**; also
   installable via `pip install .` + the `dbvisual` command.
 
 ### DB drivers (SQLAlchemy URL)
@@ -176,7 +176,7 @@ Modern layout, designed for daily use by non-technical users.
 - **Post-phase enhancements** *(DONE, 177 green tests + 5 gated skips)*: sheet attachment column,
   report **grouping with multi-level subtotals**, **saved views** (private/shared/locked),
   point-in-time **snapshots** (self-contained HTML + Excel), **gated multi-dialect integration
-  tests**, and **packaging** with `nicegui-pack` (see section 10).
+  tests**, and **packaging** with PyInstaller (see section 10).
 
 ## 9. Non-functional requirements
 
@@ -355,12 +355,12 @@ Modern layout, designed for daily use by non-technical users.
 
 **Mechanism**
 - Postgres filters the rows based on `current_setting('app.current_user_email')`.
-- dbvisual, on each session/connection, runs `SET app.current_user_email = <email>`.
+- dbvisual, on each session/connection, sets `app.current_user_email` with a bound call to `set_config`.
 
 **Prerequisites**
 - **User identity**: the app is local **single-user, without login**. RLS requires an identity
   (email) to pass to the DB, declared by the user and persisted locally (`app/identity.py`, via
-  `platformdirs`). Until there is an identity, RLS stays **inactive** (no `SET`).
+  `platformdirs`). An RLS-enabled sheet or form requires a nonempty identity to open.
 - **Connection**: must use a Postgres role that is **NOT superuser** and **NOT the table owner**
   (superuser/owner **bypass** RLS). A security requirement, flagged in the UI.
 
@@ -369,7 +369,7 @@ Modern layout, designed for daily use by non-technical users.
   each connection open, runs the corresponding `SET` (`timezone`, `search_path`,
   `statement_timeout`, and `app.current_user_email`). Default: none; no-op on non-SET dialects.
 - `app/identity.py`: the **current identity** (email) persisted locally, settable from the UI
-  (Connections page). Empty = RLS inactive.
+  (Connections page). An empty identity blocks RLS-enabled forms and sheets.
 - `app/rls.py`: `rls_session_settings(connection, rls_enabled, identity)` returns
   `{app.current_user_email: <email>}` **only** if the flag is enabled, the connection is Postgres
   and the identity is present; otherwise `{}` (flag ignored on other dialects).
@@ -431,7 +431,7 @@ Modern layout, designed for daily use by non-technical users.
 - **AI**: `app/ai/settings` + `meta/secrets`. Enable/disable (off by default), provider, model,
   **API key** saved **only** as a secret (`ai:<provider>`); shown as *set/not set* (never the
   value), with replace/delete and **Test** (mockable).
-- **Identity / RLS**: `app/identity` - `app.current_user_email` email (empty = RLS inactive).
+- **Identity / RLS**: `app/identity` - `app.current_user_email` email (required for RLS-enabled sheets and forms).
 - **General**: preferred startup mode (`app/app_settings`) and the **user data directory**
   (`platformdirs`) shown read-only for transparency (metadata store, attachments, secrets vault).
 - The contextual AI dialogs (`app/ai/ui.py`) read/write the **same** config and the same secrets
@@ -476,9 +476,9 @@ Modern layout, designed for daily use by non-technical users.
 
 ### Packaging
 
-- `docs/packaging.md` documents the `nicegui-pack` build (entrypoint `main.py`), the required
+- `docs/packaging.md` documents the PyInstaller build (entrypoint `main.py`), the required
   **hidden imports** (DB drivers, `duckdb`, `keyring`, `cryptography`, `openpyxl`, AI modules) and
-  an 8-item manual acceptance checklist.
+  the installed-product acceptance checks.
 - User data resolves via `platformdirs`, **independent of** the PyInstaller bundle dir
   (`sys._MEIPASS`); SQLCipher degrades gracefully when absent. Guarded by
   `tests/test_packaging_smoke.py`.

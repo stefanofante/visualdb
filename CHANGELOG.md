@@ -6,6 +6,13 @@ Unreleased section. Dates refer to releases of this repository.
 
 ## [Unreleased]
 
+### Added
+
+- Added native build scripts for a per-user Windows x64 installer and a macOS
+  Apple Silicon disk image. Both include the Python runtime. The Windows installer
+  includes the offline WebView2 runtime.
+- Read the version shown in About from the package metadata.
+
 ### Security and data integrity
 
 - Dispatch post-commit webhooks only for the originating definition. Two sheets
