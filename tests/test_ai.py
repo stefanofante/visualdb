@@ -79,7 +79,8 @@ def test_gemini_request_and_extract() -> None:
     http = _Capture({"candidates": [{"content": {"parts": [{"text": "SELECT 4"}]}}]})
     p = GeminiProvider(api_key="KEY", model="gemini-x", http=http)
     sql = p.generate_sql("x", _SCHEMA)
-    assert "gemini-x:generateContent?key=KEY" in http.url
+    assert http.url.endswith("gemini-x:generateContent")
+    assert http.headers["x-goog-api-key"] == "KEY"
     assert sql == "SELECT 4"
 
 

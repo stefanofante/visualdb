@@ -23,7 +23,8 @@ from dbvisual.app.ai.settings import (
     save_api_key,
     set_ai_config,
 )
-from dbvisual.app.report_service import ensure_readonly, resolve_engine
+from dbvisual.app.report_service import ensure_readonly
+from dbvisual.app.sheet_service import resolve_saved_engine
 from dbvisual.app.state import get_state
 from dbvisual.core.introspect import get_columns, list_tables
 
@@ -105,16 +106,18 @@ def ai_generate_dialog(connection_id: int, on_sql: Callable[[str], None]) -> Non
             if conn is None:
                 preview.set_text("Connection not found.")
                 return
-            password = state.secrets.get_password(connection_id)
+
             try:
-                engine, metadata = resolve_engine(conn, password)
+                engine, metadata = resolve_saved_engine(conn, state.secrets)
                 schema = {
                     t: [c.name for c in get_columns(metadata, t)]
                     for t in list_tables(metadata)
                 }
                 provider = get_provider(cfg.provider, key, cfg.model)
                 sql = provider.generate_sql(prompt.value or "", schema)
-                ensure_readonly(sql)  # reject any non-SELECT before review
+                ensure_readonly(
+                    sql, engine.dialect.name
+                )  # reject any non-SELECT before review
             except Exception as exc:
                 preview.set_text(f"Error: {exc}")
                 return

@@ -11,6 +11,8 @@ over existing databases, in the spirit of Visual DB. It runs entirely on the ins
 machine: no cloud, no remote account, no multi-tenancy. The *target* databases may be local
 or remote, but the app and its metadata always stay local.
 
+[Changelog](CHANGELOG.md) · [Visual DB feature comparison, November 2026](docs/visual-db-review-2026-11-26.md)
+
 Central concept: everything is generated from a **query-spec** (JSON). Forms, sheets and
 reports are just different *renders* of the same specification.
 
@@ -168,9 +170,9 @@ URLs (Zapier/Slack/Discord/custom). Body placeholders `{{field}}` / `{{field:for
 `{{field:bare}}`. Webhook URLs are stored as secrets.
 
 ### Row-Level Security (PostgreSQL)
-RLS is delegated to Postgres policies; dbvisual only passes the current identity via
-`SET app.current_user_email`. Enabled per definition (Postgres only) with a local identity
-email.
+PostgreSQL enforces the configured policies. An RLS-enabled sheet or form requires a
+local identity email. DBVisual passes it in the session setting `app.current_user_email`.
+The email is self-declared. Configure a database role subject to the applicable policies.
 
 ### AI assistant (optional, off by default)
 Natural-language to read-only SQL for Reports via a chosen LLM provider (Claude / OpenAI /

@@ -11,6 +11,7 @@ feature, so a reliable TSV copy button and a paste dialog are provided instead.
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from nicegui import ui
@@ -64,7 +65,11 @@ class SheetGrid:
         self.formulas = formulas or {}
         self.totals = totals or {}
         self.attachment_fields = attachment_fields or []
-        self._attachments = attachments
+        from dbvisual.meta.attachments import AttachmentDraft
+
+        self._attachments = (
+            AttachmentDraft(attachments, app_id) if attachments is not None else None
+        )
         self._app_id = app_id
         self._id_seq = 0
         self.rows: list[dict[str, Any]] = [self._prepare(dict(r)) for r in rows]
@@ -142,7 +147,7 @@ class SheetGrid:
                 # Mark the cell when its field is listed in the row's error array.
                 class_rules["dbv-invalid"] = (
                     "params.data && params.data.__err__ && "
-                    f"params.data.__err__.indexOf('{col.field}') >= 0"
+                    f"params.data.__err__.indexOf({json.dumps(col.field)}) >= 0"
                 )
             defs.append(
                 {
@@ -158,7 +163,7 @@ class SheetGrid:
         return defs
 
     def _build(self) -> None:
-        ui.html(_STYLE)
+        ui.add_head_html(_STYLE)
         with ui.row().classes("w-full items-center gap-2"):
             self._search = (
                 ui.input(placeholder="Search...")
@@ -235,13 +240,17 @@ class SheetGrid:
         if not data or "__id__" not in data:
             return
         rid = data["__id__"]
-        self._apply_formulas(data)
-        self._validate_row(data)
-        self._by_id[rid] = data
-        for i, row in enumerate(self.rows):
-            if row.get("__id__") == rid:
-                self.rows[i] = data
-                break
+        row = self._by_id.get(rid)
+        field = event.args.get("colId")
+        if (
+            row is None
+            or field not in self.view.editable_fields
+            or field in self.formulas
+        ):
+            return
+        row[field] = data.get(field)
+        self._apply_formulas(row)
+        self._validate_row(row)
         if rid in self._existing_ids:
             self._dirty_ids.add(rid)
         self._recompute_totals()
@@ -265,33 +274,57 @@ class SheetGrid:
             return
         for rid in ids:
             if rid in self._existing_ids:
-                row = self._by_id[rid]
-                self._deleted.append(row)
-                self._cascade_attachments(row)
+                self._deleted.append(self._orig_by_id[rid])
             self._dirty_ids.discard(rid)
         self.rows = [r for r in self.rows if r.get("__id__") not in ids]
         self._by_id = {r["__id__"]: r for r in self.rows}
+        self.grid.options["rowData"] = self.rows
+        self._recompute_totals()
         self.grid.update()
 
     # -- attachments --------------------------------------------------------
 
-    def _cascade_attachments(self, row: dict[str, Any]) -> None:
-        """Delete the on-disk files of a removed row (cascade)."""
-        if not self.attachment_fields or self._attachments is None:
-            return
-        from dbvisual.app.sheet_attachments import cascade_delete_row, record_key
+    def install_attachments(self, results):
+        from dbvisual.app.sheet_attachments import inserted_record_key, record_key
+        from dbvisual.meta.attachments import load_metadata
 
-        cascade_delete_row(self._attachments, self._app_id, record_key(self.view, row))
+        if self._attachments is None:
+            return
+        inserts, updates, deletes = self.collect_changes()
+        for row in updates:
+            self._attachments.install(
+                record_key(self.view, row), [row.get(f) for f in self.attachment_fields]
+            )
+        for row, pk in zip(
+            inserts, results[len(deletes) + len(updates) :], strict=True
+        ):
+            values = [row.get(f) for f in self.attachment_fields]
+            if any(load_metadata(value) for value in values):
+                self._attachments.install(inserted_record_key(self.view, pk), values)
+
+    def finish_attachments(self, committed):
+        if self._attachments:
+            self._attachments.finish(committed)
+
+    def cleanup_attachments(self):
+        from dbvisual.app.sheet_attachments import record_key
+
+        if self._attachments is None:
+            return
+        _, updates, deletes, originals = self.collect_changes_with_originals()
+        for old, new in [*zip(originals, updates), *((row, {}) for row in deletes)]:
+            self._attachments.discard_removed(
+                record_key(self.view, old),
+                [old.get(f) for f in self.attachment_fields],
+                [new.get(f) for f in self.attachment_fields],
+            )
 
     async def _attachments_dialog(self) -> None:
         """Manage attachments of the selected row's first attachment field."""
         from dbvisual.app.sheet_attachments import (
-            add_attachment,
-            attachment_summary,
             record_key,
-            remove_attachment,
         )
-        from dbvisual.meta.attachments import load_metadata
+        from dbvisual.meta.attachments import dump_metadata, load_metadata
 
         selected = await self.grid.get_selected_rows()
         if len(selected) != 1:
@@ -300,14 +333,17 @@ class SheetGrid:
         row = self._by_id.get(selected[0]["__id__"])
         if row is None:
             return
-        field = self.attachment_fields[0]
+        choices = [f for f in self.attachment_fields if f in self.view.editable_fields]
+        if not choices:
+            return
         key = record_key(self.view, row)
 
         with ui.dialog() as dialog, ui.card().classes("w-[520px] gap-2"):
-            ui.label(f"Attachments - {field}").classes("text-lg font-semibold")
+            selector = ui.select(choices, value=choices[0], label="Attachment field")
             listing = ui.column().classes("w-full gap-1")
 
             def render() -> None:
+                field = selector.value
                 listing.clear()
                 with listing:
                     for meta in load_metadata(row.get(field)):
@@ -317,29 +353,31 @@ class SheetGrid:
                                 "text-sm"
                             )
                             ui.button(
+                                icon="download",
+                                on_click=lambda m=meta: ui.download(
+                                    self._attachments.read(key, m["id"]), m["filename"]
+                                ),
+                            ).props("flat dense")
+                            ui.button(
                                 icon="delete", on_click=lambda m=meta: _remove(m)
                             ).props("flat dense color=negative size=sm")
 
             def _remove(meta: dict[str, Any]) -> None:
-                row[field] = remove_attachment(
-                    self._attachments, self._app_id, key, row.get(field), meta["id"]
+                field = selector.value
+                row[field] = dump_metadata(
+                    [m for m in load_metadata(row.get(field)) if m["id"] != meta["id"]]
                 )
-                self._dirty_ids.add(row["__id__"]) if row[
-                    "__id__"
-                ] in self._existing_ids else None
+                if row["__id__"] in self._existing_ids:
+                    self._dirty_ids.add(row["__id__"])
                 self.grid.update()
                 render()
 
-            def _on_upload(event: Any) -> None:
-                row[field] = add_attachment(
-                    self._attachments,
-                    self._app_id,
-                    key,
-                    row.get(field),
-                    event.name,
-                    event.content.read(),
-                    getattr(event, "type", "application/octet-stream"),
+            async def _on_upload(event: Any) -> None:
+                field = selector.value
+                item = self._attachments.upload(
+                    event.file.name, await event.file.read(), event.file.content_type
                 )
+                row[field] = dump_metadata([*load_metadata(row.get(field)), item])
                 if row["__id__"] in self._existing_ids:
                     self._dirty_ids.add(row["__id__"])
                 self.grid.update()
@@ -347,9 +385,7 @@ class SheetGrid:
 
             render()
             ui.upload(on_upload=_on_upload, auto_upload=True).classes("w-full")
-            ui.label(attachment_summary(row.get(field))).classes(
-                "text-xs text-gray-500"
-            )
+            selector.on_value_change(lambda _: render())
             ui.button("Close", on_click=dialog.close).props("flat")
         dialog.open()
 
@@ -425,7 +461,7 @@ class SheetGrid:
                 elif agg == "avg":
                     value = round(sum(nums) / len(nums), 4) if nums else 0
                 else:  # count
-                    value = len(nums)
+                    value = sum(row.get(f) is not None for row in rows)
                 pinned[f] = value
             elif not label_placed:
                 pinned[f] = "Σ"
@@ -487,11 +523,12 @@ class SheetGrid:
             row: dict[str, Any] = {c.field: None for c in self.view.columns}
             for field, value in zip(editable, cells):
                 row[field] = value
-            self._tag(row)
+            self._prepare(row)
             self.rows.append(row)
             self._by_id[row["__id__"]] = row
             added += 1
         if added:
+            self._recompute_totals()
             self.grid.update()
         return added
 

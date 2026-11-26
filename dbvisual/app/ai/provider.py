@@ -143,13 +143,13 @@ class GeminiProvider(LLMProvider):
     def build_request(self, prompt, schema):  # type: ignore[override]
         url = (
             f"https://generativelanguage.googleapis.com/v1beta/models/"
-            f"{self.model}:generateContent?key={self._api_key}"
+            f"{self.model}:generateContent"
         )
         payload = {
             "system_instruction": {"parts": [{"text": self._system}]},
             "contents": [{"parts": [{"text": self._user_prompt(prompt, schema)}]}],
         }
-        return url, {}, payload
+        return url, {"x-goog-api-key": self._api_key}, payload
 
     def extract_sql(self, response):  # type: ignore[override]
         return response["candidates"][0]["content"]["parts"][0]["text"]

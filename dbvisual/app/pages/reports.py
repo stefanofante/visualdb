@@ -23,8 +23,8 @@ from dbvisual.app.report_service import (
     full_text_filter,
     group_with_subtotals,
     load_report_rows,
-    resolve_engine,
 )
+from dbvisual.app.sheet_service import resolve_saved_engine
 from dbvisual.app.shell import frame
 from dbvisual.app.snapshot_service import write_html_snapshot, write_xlsx_snapshot
 from dbvisual.app.state import get_state
@@ -89,15 +89,18 @@ def _create_dialog(on_saved) -> None:
 
         def load_schema() -> None:
             builder_box.clear()
+            ctx.clear()
             cid = conn_select.value
             if cid is None:
                 return
             conn = state.store.get_connection(int(cid))
-            password = state.secrets.get_password(int(cid))
+
             if conn is None:
                 return
             try:
-                _engine, metadata = resolve_engine(conn, password, refresh=True)
+                _engine, metadata = resolve_saved_engine(
+                    conn, state.secrets, refresh=True
+                )
                 tables = list_tables(metadata)
             except Exception as exc:
                 result.set_text(f"Schema error: {exc}")
@@ -144,7 +147,13 @@ def _create_dialog(on_saved) -> None:
 
             if source.value == "custom":
                 try:
-                    ensure_readonly(custom_sql.value or "")
+                    saved = state.store.get_connection(int(conn_select.value))
+                    ensure_readonly(
+                        custom_sql.value or "",
+                        "sqlite"
+                        if saved["dialect"] == "sqlcipher"
+                        else saved["dialect"],
+                    )
                 except ValueError as exc:
                     result.set_text(str(exc))
                     result.classes(replace="text-sm text-red-600")
@@ -252,9 +261,9 @@ def report_viewer(definition_id: int) -> None:
         if conn is None:
             ui.label("Connection not available.").classes("text-red-600")
             return
-        password = state.secrets.get_password(conn["id"])
+
         try:
-            engine, metadata = resolve_engine(conn, password)
+            engine, metadata = resolve_saved_engine(conn, state.secrets)
         except Exception as exc:
             ui.label(f"Unable to open the report: {exc}").classes("text-red-600")
             return

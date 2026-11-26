@@ -132,8 +132,10 @@ def test_send_posts_body_and_filters_events(tmp_path: Path) -> None:
     secrets.set_secret(webhook_secret_key(wid), "https://hook.example/x")
 
     # A 'created' event fires; an 'updated' event does not (filtered out).
-    svc.handle_event(CrudEvent("created", "orders", {"id": 1, "amount": 9}))
-    svc.handle_event(CrudEvent("updated", "orders", {"id": 1, "amount": 9}))
+    svc.handle_event(CrudEvent("created", "orders", {"id": 1, "amount": 9}, def_id))
+    svc.handle_event(CrudEvent("created", "orders", {"id": 2}, def_id + 1))
+    svc.handle_event(CrudEvent("created", "orders", {"id": 3}))
+    svc.handle_event(CrudEvent("updated", "orders", {"id": 1, "amount": 9}, def_id))
 
     assert len(calls) == 1
     url, body = calls[0]
@@ -152,4 +154,4 @@ def test_failing_webhook_does_not_raise(tmp_path: Path) -> None:
     secrets.set_secret(webhook_secret_key(wid), "https://hook.example/x")
 
     # Must not raise even though the poster fails -> the save is never broken.
-    svc.handle_event(CrudEvent("created", "orders", {"id": 1}))
+    svc.handle_event(CrudEvent("created", "orders", {"id": 1}, def_id))

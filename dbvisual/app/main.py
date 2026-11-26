@@ -7,6 +7,7 @@ either desktop (native window) or web (127.0.0.1) mode.
 
 from __future__ import annotations
 
+from ipaddress import ip_address
 from pathlib import Path
 from typing import Literal
 
@@ -53,11 +54,12 @@ def run(
     * ``desktop`` -> native window via pywebview.
     * ``web``     -> browser UI bound to ``host`` (default 127.0.0.1 only).
     """
+    if mode == "web" and host != "localhost" and not ip_address(host).is_loopback:
+        raise ValueError("DBVisual web mode requires a loopback address.")
     bootstrap()
     common = {
         "title": "dbvisual",
         "reload": reload,
-        "storage_secret": "dbvisual-local",
     }
     if mode == "desktop":
         ui.run(native=True, **common)

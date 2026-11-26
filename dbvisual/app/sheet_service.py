@@ -20,6 +20,7 @@ from dbvisual.core.compiler import compile_select
 from dbvisual.core.connections import ConnectionConfig, build_engine
 from dbvisual.core.crud import ConflictError, Operation, save_master_detail
 from dbvisual.core.introspect import get_primary_key, reflect_schema
+from dbvisual.core.introspect import resolve_table as get_table
 from dbvisual.core.queryspec import QuerySpec
 
 __all__ = [
@@ -108,51 +109,52 @@ def config_from_connection(
     )
 
 
-# Cache of (engine, reflected metadata) keyed by (connection id, session settings).
-_engine_cache: dict[
-    tuple[int, tuple[tuple[str, str], ...]], tuple[Engine, MetaData]
-] = {}
+# Keep credentials out of cache keys and invalidate entries when a saved target changes.
+_engine_cache: dict[tuple[int, tuple], tuple[bytes, Engine, MetaData]] = {}
 
 
 def resolve_engine(
-    connection: dict[str, Any],
-    password: str | None,
-    *,
-    refresh: bool = False,
-    session_settings: dict[str, str] | None = None,
-    encryption_key: str | None = None,
-) -> tuple[Engine, MetaData]:
-    """Return a cached ``(engine, metadata)`` for ``connection`` (reflecting once).
-
-    ``session_settings`` (e.g. ``app.current_user_email`` for Postgres RLS) are
-    applied on each connection and are part of the cache key. ``encryption_key``
-    opens an encrypted local file DB (SQLCipher / DuckDB).
-    """
+    connection, password, *, refresh=False, session_settings=None, encryption_key=None
+):
     key = (int(connection["id"]), tuple(sorted((session_settings or {}).items())))
-    if not refresh and key in _engine_cache:
-        return _engine_cache[key]
-    engine = build_engine(
-        config_from_connection(connection, password, session_settings, encryption_key)
+    config = config_from_connection(
+        connection, password, session_settings, encryption_key
     )
-    metadata = reflect_schema(engine)
-    _engine_cache[key] = (engine, metadata)
+    import json
+    from hashlib import sha256
+
+    signature = sha256(
+        json.dumps([connection, password, encryption_key], sort_keys=True).encode()
+    ).digest()
+    cached = _engine_cache.get(key)
+    if cached and not refresh and cached[0] == signature:
+        return cached[1], cached[2]
+    engine = build_engine(config)
+    try:
+        metadata = reflect_schema(engine)
+    except Exception:
+        engine.dispose()
+        raise
+    if cached:
+        cached[1].dispose()
+    _engine_cache[key] = signature, engine, metadata
     return engine, metadata
 
 
+def resolve_saved_engine(connection, secrets, **options):
+    cid = connection["id"]
+    return resolve_engine(
+        connection,
+        secrets.get_password(cid),
+        encryption_key=secrets.get_secret(f"enckey:{cid}"),
+        **options,
+    )
+
+
 def clear_engine_cache() -> None:
-    """Drop all cached engines/metadata (e.g. after editing a connection)."""
+    for _, engine, _ in _engine_cache.values():
+        engine.dispose()
     _engine_cache.clear()
-
-
-def get_table(metadata: MetaData, name: str) -> Table:
-    """Return the reflected :class:`Table` for ``name`` (raw or schema-qualified)."""
-    tbl = metadata.tables.get(name)
-    if tbl is not None:
-        return tbl
-    for key, value in metadata.tables.items():
-        if key.split(".")[-1] == name:
-            return value
-    raise KeyError(f"Table not found in metadata: {name!r}")
 
 
 def build_view(spec: QuerySpec, metadata: MetaData) -> SheetView:
@@ -223,13 +225,22 @@ def build_operations(
     def values_of(row: dict[str, Any]) -> dict[str, Any]:
         return {field_to_col[f]: row[f] for f in editable if f in row}
 
+    if update_originals is not None and len(update_originals) != len(updates):
+        raise ValueError("Each updated row requires its original values.")
     ops: list[Operation] = []
     for row in deletes:
-        ops.append(Operation(kind="delete", table=table, pk_values=pk_of(row)))
+        ops.append(
+            Operation(
+                kind="delete",
+                table=table,
+                pk_values=pk_of(row),
+                expected=values_of(row),
+            )
+        )
     for idx, row in enumerate(updates):
         values = values_of(row)
         expected: dict[str, Any] | None = None
-        if update_originals is not None and idx < len(update_originals):
+        if update_originals is not None:
             original = update_originals[idx]
             # Guard on the original values of the changed editable columns.
             expected = {
@@ -241,7 +252,9 @@ def build_operations(
             Operation(
                 kind="update",
                 table=table,
-                pk_values=pk_of(row),
+                pk_values=pk_of(
+                    update_originals[idx] if update_originals is not None else row
+                ),
                 values=values,
                 expected=expected,
             )
@@ -251,8 +264,8 @@ def build_operations(
     return ops
 
 
-def apply_batch(engine: Engine, ops: list[Operation]) -> None:
+def apply_batch(engine: Engine, ops: list[Operation], *, before_commit=None) -> None:
     """Apply all operations in a single transaction (rollback on any error)."""
     if not ops:
         return
-    save_master_detail(engine, ops[0], ops[1:])
+    save_master_detail(engine, ops[0], ops[1:], before_commit=before_commit)

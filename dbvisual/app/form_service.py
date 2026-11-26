@@ -11,7 +11,7 @@ from __future__ import annotations
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
-from sqlalchemy import Engine, MetaData, Table, select, text
+from sqlalchemy import Engine, MetaData, Table, select
 
 from dbvisual.app.formula import FormulaError, evaluate
 from dbvisual.app.sheet_service import (  # reused Phase 3 helpers
@@ -25,6 +25,7 @@ from dbvisual.app.sheet_service import (  # reused Phase 3 helpers
 from dbvisual.app.validation import FieldRule, validate_field
 from dbvisual.core.crud import delete_record, insert_record, update_record
 from dbvisual.core.queryspec import QuerySpec
+from dbvisual.core.readonly import readonly_result
 
 __all__ = [
     "AvailableValues",
@@ -231,8 +232,7 @@ def resolve_available_values(
             ).all()
         return [{"value": r[0], "label": str(r[1])} for r in rows]
     if av.source == "query" and av.query:
-        with engine.connect() as conn:
-            result = conn.execute(text(av.query))
+        with readonly_result(engine, av.query) as result:
             out: list[dict[str, Any]] = []
             for row in result:
                 value = row[0]
@@ -263,6 +263,7 @@ def save_record(
     *,
     is_new: bool,
     original: dict[str, Any] | None = None,
+    before_commit=None,
 ) -> Any:
     """Insert or update a single record (main-table columns only).
 
@@ -272,8 +273,8 @@ def save_record(
     """
     values = _editable_values(view, record)
     if is_new:
-        return insert_record(engine, table, values)
-    pk = _pk_values(view, record)
+        return insert_record(engine, table, values, before_commit=before_commit)
+    pk = _pk_values(view, original if original is not None else record)
     expected: dict[str, Any] | None = None
     if original is not None:
         field_to_col = view.field_to_column
@@ -282,11 +283,15 @@ def save_record(
             for f in view.editable_fields
             if f in record and f in original
         }
-    return update_record(engine, table, pk, values, expected=expected)
+    return update_record(
+        engine, table, pk, values, expected=expected, before_commit=before_commit
+    )
 
 
 def delete_form_record(
     engine: Engine, view: SheetView, table: Table, record: dict[str, Any]
 ) -> int:
     """Delete the record identified by its primary-key fields."""
-    return delete_record(engine, table, _pk_values(view, record))
+    return delete_record(
+        engine, table, _pk_values(view, record), _editable_values(view, record)
+    )

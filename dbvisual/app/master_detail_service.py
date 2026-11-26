@@ -23,7 +23,7 @@ from dbvisual.app.sheet_service import (
 )
 from dbvisual.core.compiler import compile_select
 from dbvisual.core.crud import Operation, save_master_detail
-from dbvisual.core.introspect import detect_foreign_keys
+from dbvisual.core.introspect import detect_foreign_keys, get_primary_key
 from dbvisual.core.queryspec import QuerySpec
 
 __all__ = [
@@ -89,10 +89,17 @@ def suggest_detail_fk(
     Uses ``detect_foreign_keys`` on the detail table to find the FK whose remote
     table is the master's main table.
     """
-    for fk in detect_foreign_keys(metadata, detail_table):
-        if fk.remote_table == master_table:
-            return fk.local_col, fk.remote_col
-    return None
+    candidates = [
+        fk
+        for fk in detect_foreign_keys(metadata, detail_table)
+        if fk.remote_table == master_table
+    ]
+    if len(candidates) != 1 or get_primary_key(metadata, master_table) != [
+        candidates[0].remote_col
+    ]:
+        return None
+    fk = candidates[0]
+    return fk.local_col, fk.remote_col
 
 
 # -- loading ----------------------------------------------------------------
@@ -105,6 +112,15 @@ def load_details(
     master_pk_value: Any,
 ) -> tuple[list[str], list[dict[str, Any]]]:
     """Load the detail rows for a given master PK (bound to the single param)."""
+    validate_detail_query(detail)
+    if not any(
+        f.param == detail.param_name
+        and f.op == "eq"
+        and f.column.table == detail.spec.main_table
+        and f.column.name == detail.fk_column
+        for f in detail.spec.filters
+    ):
+        raise ValueError("Detail query requires a filter on its master foreign key.")
     stmt = compile_select(detail.spec, metadata, {detail.param_name: master_pk_value})
     with engine.connect() as conn:
         result = conn.execute(stmt)
@@ -183,7 +199,10 @@ def build_save_plan(
         master_op = Operation(
             kind="update",
             table=master_table,
-            pk_values=_pk_values(master_view, master_record),
+            pk_values=_pk_values(
+                master_view,
+                master_original if master_original is not None else master_record,
+            ),
             values=_editable_values(master_view, master_record),
             expected=expected,
         )
@@ -205,6 +224,14 @@ def build_save_plan(
                     fk_injections.append((op, dc.fk_column))
                 elif master_pk_value is not None:
                     op.values[dc.fk_column] = master_pk_value
+            elif op.kind in {"update", "delete"}:
+                if master_is_new or master_pk_value is None:
+                    raise ValueError(
+                        "A saved master is required to edit existing details."
+                    )
+                op.expected = {**(op.expected or {}), dc.fk_column: master_pk_value}
+                if op.values is not None:
+                    op.values[dc.fk_column] = master_pk_value
             detail_ops.append(op)
 
     return SavePlan(
@@ -222,6 +249,8 @@ def execute_save(engine: Engine, plan: SavePlan) -> list[Any]:
         if not plan.master_is_new or not plan.fk_injections:
             return
         new_pk = master_result[0] if master_result else None
+        if new_pk is None:
+            raise ValueError("The database did not return the new master key.")
         for op, fk_column in plan.fk_injections:
             if op.values is not None:
                 op.values[fk_column] = new_pk

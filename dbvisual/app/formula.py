@@ -87,14 +87,35 @@ def _eval(node: ast.AST, row: dict[str, Any]) -> Any:
         op = _BIN_OPS.get(type(node.op))
         if op is None:
             raise FormulaError("Operator not allowed.")
-        return op(_eval(node.left, row), _eval(node.right, row))
+        left, right = _eval(node.left, row), _eval(node.right, row)
+        if isinstance(node.op, ast.Pow) and isinstance(right, (int, float)):
+            if abs(right) > 1024 or (
+                isinstance(left, int) and left.bit_length() * max(right, 0) > 65536
+            ):
+                raise FormulaError("Exponent exceeds the formula limit.")
+        if isinstance(node.op, ast.Mult):
+            for seq, count in ((left, right), (right, left)):
+                if (
+                    isinstance(seq, (str, bytes, tuple, list))
+                    and isinstance(count, int)
+                    and len(seq) * count > 65536
+                ):
+                    raise FormulaError("Result exceeds the formula size limit.")
+        if isinstance(node.op, ast.Mod) and isinstance(left, (str, bytes)):
+            raise FormulaError("String formatting is not a formula operator.")
+        value = op(left, right)
+        if isinstance(value, int) and value.bit_length() > 65536:
+            raise FormulaError("Integer exceeds the formula size limit.")
+        if isinstance(value, (str, list, bytes, tuple)) and len(value) > 65536:
+            raise FormulaError("Result exceeds the formula size limit.")
+        return value
     if isinstance(node, ast.UnaryOp):
         unary = _UNARY_OPS.get(type(node.op))
         if unary is None:
             raise FormulaError("Unary operator not allowed.")
         return unary(_eval(node.operand, row))
     if isinstance(node, ast.BoolOp):
-        values = [_eval(v, row) for v in node.values]
+        values = (_eval(v, row) for v in node.values)
         if isinstance(node.op, ast.And):
             return all(values)
         return any(values)
@@ -130,8 +151,15 @@ def evaluate(expression: str, row: dict[str, Any]) -> Any:
 
     Raises :class:`FormulaError` for invalid or disallowed expressions.
     """
+    if len(expression) > 8192:
+        raise FormulaError("Formula is too long.")
     try:
         tree = ast.parse(expression, mode="eval")
-    except SyntaxError as exc:
-        raise FormulaError(f"Invalid syntax: {exc.msg}") from exc
-    return _eval(tree, row)
+    except (SyntaxError, RecursionError) as exc:
+        raise FormulaError(f"Invalid syntax: {exc}") from exc
+    try:
+        return _eval(tree, row)
+    except FormulaError:
+        raise
+    except (ArithmeticError, TypeError, ValueError, RecursionError) as exc:
+        raise FormulaError(str(exc)) from exc

@@ -25,6 +25,7 @@ class CrudEvent:
     kind: EventKind
     table: str
     values: dict[str, Any] = field(default_factory=dict)
+    definition_id: int | None = None
 
 
 _dispatchers: list[Callable[[CrudEvent], None]] = []

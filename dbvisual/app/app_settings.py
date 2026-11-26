@@ -11,7 +11,10 @@ import json
 from pathlib import Path
 from typing import Any
 
+from filelock import FileLock
 from platformdirs import user_data_dir
+
+from dbvisual.meta.local_files import atomic_write
 
 _APP_NAME = "dbvisual"
 
@@ -31,29 +34,34 @@ def _settings_path(dir_override: str | Path | None = None) -> Path:
     return data_dir(dir_override) / "settings.json"
 
 
-def _load(dir_override: str | Path | None = None) -> dict[str, Any]:
+def load_settings(dir_override: str | Path | None = None) -> dict[str, Any]:
     path = _settings_path(dir_override)
     if not path.exists():
         return {}
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (ValueError, OSError):
-        return {}
-    return data if isinstance(data, dict) else {}
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise ValueError("Invalid settings file.")
+    return data
 
 
 def get_setting(
     key: str, default: Any = None, dir_override: str | Path | None = None
 ) -> Any:
     """Return a persisted setting value (or ``default``)."""
-    return _load(dir_override).get(key, default)
+    return load_settings(dir_override).get(key, default)
 
 
 def set_setting(key: str, value: Any, dir_override: str | Path | None = None) -> None:
     """Persist a single setting value."""
-    data = _load(dir_override)
-    data[key] = value
-    _settings_path(dir_override).write_text(json.dumps(data), encoding="utf-8")
+    update_settings({key: value}, dir_override)
+
+
+def update_settings(values, dir_override=None):
+    path = _settings_path(dir_override)
+    with FileLock(str(path) + ".lock", timeout=10):
+        data = load_settings(dir_override)
+        data.update(values)
+        atomic_write(path, json.dumps(data).encode("utf-8"))
 
 
 def get_startup_mode(dir_override: str | Path | None = None) -> str:

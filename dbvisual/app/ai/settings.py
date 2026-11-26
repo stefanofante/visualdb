@@ -8,42 +8,13 @@ secrets system. The feature is **off by default**.
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from platformdirs import user_data_dir
-
 from dbvisual.app.ai.provider import DEFAULT_MODELS
+from dbvisual.app.app_settings import load_settings, update_settings
 from dbvisual.meta.secrets import SecretStore
-
-_APP_NAME = "dbvisual"
-
-
-def _settings_path(data_dir: str | Path | None = None) -> Path:
-    base = (
-        Path(data_dir)
-        if data_dir is not None
-        else Path(user_data_dir(_APP_NAME, appauthor=False))
-    )
-    base.mkdir(parents=True, exist_ok=True)
-    return base / "settings.json"
-
-
-def _load(data_dir: str | Path | None = None) -> dict:
-    path = _settings_path(data_dir)
-    if not path.exists():
-        return {}
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (ValueError, OSError):
-        return {}
-    return data if isinstance(data, dict) else {}
-
-
-def _save(data: dict, data_dir: str | Path | None = None) -> None:
-    _settings_path(data_dir).write_text(json.dumps(data), encoding="utf-8")
 
 
 @dataclass(slots=True)
@@ -57,7 +28,7 @@ class AIConfig:
 
 def get_ai_config(data_dir: str | Path | None = None) -> AIConfig:
     """Return the persisted AI config (disabled by default)."""
-    data = _load(data_dir)
+    data = load_settings(data_dir)
     provider = str(data.get("ai_provider", "anthropic"))
     return AIConfig(
         enabled=bool(data.get("ai_enabled", False)),
@@ -68,11 +39,14 @@ def get_ai_config(data_dir: str | Path | None = None) -> AIConfig:
 
 def set_ai_config(config: AIConfig, data_dir: str | Path | None = None) -> None:
     """Persist the non-secret AI settings."""
-    data = _load(data_dir)
-    data["ai_enabled"] = config.enabled
-    data["ai_provider"] = config.provider
-    data["ai_model"] = config.model
-    _save(data, data_dir)
+    update_settings(
+        {
+            "ai_enabled": config.enabled,
+            "ai_provider": config.provider,
+            "ai_model": config.model,
+        },
+        data_dir,
+    )
 
 
 def api_key_secret_key(provider: str) -> str:

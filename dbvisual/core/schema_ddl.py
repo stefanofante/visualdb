@@ -46,7 +46,7 @@ _LOGICAL_TYPES: dict[str, Any] = {
 }
 
 # Dialects whose ALTER TABLE cannot ADD/DROP a foreign key constraint.
-_NO_ALTER_FK = {"sqlite"}
+_NO_ALTER_FK = {"sqlite", "duckdb"}
 
 
 class DDLNotSupported(RuntimeError):
@@ -106,35 +106,47 @@ def _compile_type(dialect: Dialect, spec: ColumnSpec) -> str:
 
 def compose_create_table(dialect: Dialect, table: TableSpec) -> str:
     """Compose a ``CREATE TABLE`` statement (with inline PK and FKs)."""
-    from sqlalchemy import ForeignKey
+    from sqlalchemy import ForeignKeyConstraint
 
-    fk_by_col = {fk.column: fk for fk in table.foreign_keys}
     md = MetaData()
-    # Stub referenced tables so ForeignKey targets resolve at compile time.
+    tbl = Table(
+        table.name,
+        md,
+        *(
+            Column(
+                c.name,
+                _sa_type(c),
+                primary_key=c.primary_key,
+                nullable=c.nullable and not c.primary_key,
+                autoincrement=False if dialect.name == "duckdb" else "auto",
+            )
+            for c in table.columns
+        ),
+    )
     for fk in table.foreign_keys:
-        if fk.ref_table not in md.tables:
-            Table(fk.ref_table, md, Column(fk.ref_column, Integer, primary_key=True))
-    cols: list[Column[Any]] = []
-    for c in table.columns:
-        args: list[Any] = [c.name, _sa_type(c)]
-        if c.name in fk_by_col:
-            fk = fk_by_col[c.name]
-            args.append(ForeignKey(f"{fk.ref_table}.{fk.ref_column}"))
-        cols.append(Column(*args, primary_key=c.primary_key, nullable=c.nullable))
-    tbl = Table(table.name, md, *cols)
+        remote = md.tables.get(fk.ref_table)
+        if remote is None:
+            remote = Table(fk.ref_table, md)
+        if fk.ref_column not in remote.c and remote is not tbl:
+            remote.append_column(Column(fk.ref_column, Integer))
+        tbl.append_constraint(
+            ForeignKeyConstraint([fk.column], [remote.c[fk.ref_column]], name=fk.name)
+        )
     return str(CreateTable(tbl).compile(dialect=dialect)).strip()
 
 
 def compose_drop_table(dialect: Dialect, table: str) -> str:
     """Compose a ``DROP TABLE`` statement (destructive)."""
-    return f"DROP TABLE {table}"
+    return f"DROP TABLE {dialect.identifier_preparer.quote(table)}"
 
 
 def compose_add_column(dialect: Dialect, table: str, column: ColumnSpec) -> str:
     """Compose an ``ALTER TABLE ... ADD COLUMN`` statement."""
     coltype = _compile_type(dialect, column)
     null = "" if column.nullable else " NOT NULL"
-    return f"ALTER TABLE {table} ADD COLUMN {column.name} {coltype}{null}"
+    quote = dialect.identifier_preparer.quote
+    add = "ADD" if dialect.name in {"oracle", "mssql"} else "ADD COLUMN"
+    return f"ALTER TABLE {quote(table)} {add} {quote(column.name)} {coltype}{null}"
 
 
 def compose_drop_column(dialect: Dialect, table: str, column: str) -> str:
@@ -143,7 +155,8 @@ def compose_drop_column(dialect: Dialect, table: str, column: str) -> str:
     Note: very old SQLite (< 3.35) lacks native DROP COLUMN and needs a
     table-rebuild; modern SQLite and DuckDB support it directly.
     """
-    return f"ALTER TABLE {table} DROP COLUMN {column}"
+    quote = dialect.identifier_preparer.quote
+    return f"ALTER TABLE {quote(table)} DROP COLUMN {quote(column)}"
 
 
 def compose_add_foreign_key(dialect: Dialect, table: str, fk: ForeignKeySpec) -> str:
@@ -154,9 +167,10 @@ def compose_add_foreign_key(dialect: Dialect, table: str, fk: ForeignKeySpec) ->
             "(recreate the table with an inline FK)."
         )
     name = fk.name or f"fk_{table}_{fk.column}"
+    q = dialect.identifier_preparer.quote
     return (
-        f"ALTER TABLE {table} ADD CONSTRAINT {name} "
-        f"FOREIGN KEY ({fk.column}) REFERENCES {fk.ref_table}({fk.ref_column})"
+        f"ALTER TABLE {q(table)} ADD CONSTRAINT {q(name)} "
+        f"FOREIGN KEY ({q(fk.column)}) REFERENCES {q(fk.ref_table)}({q(fk.ref_column)})"
     )
 
 
@@ -166,30 +180,42 @@ def compose_drop_foreign_key(dialect: Dialect, table: str, constraint: str) -> s
         raise DDLNotSupported(
             f"{dialect.name}: removing a FK via ALTER is not supported."
         )
-    return f"ALTER TABLE {table} DROP CONSTRAINT {constraint}"
+    q = dialect.identifier_preparer.quote
+    kind = "FOREIGN KEY" if dialect.name in {"mysql", "mariadb"} else "CONSTRAINT"
+    return f"ALTER TABLE {q(table)} DROP {kind} {q(constraint)}"
 
 
 def compose_rename_table(dialect: Dialect, table: str, new_name: str) -> str:
     """Compose a rename-table statement (dialect dependent)."""
-    return f"ALTER TABLE {table} RENAME TO {new_name}"
+    q = dialect.identifier_preparer.quote
+    if dialect.name == "mssql":
+        table_literal = q(table).replace("'", "''")
+        name_literal = new_name.replace("'", "''")
+        return f"EXEC sp_rename N'{table_literal}', N'{name_literal}', 'OBJECT'"
+    return f"ALTER TABLE {q(table)} RENAME TO {q(new_name)}"
 
 
 # Operations considered destructive -> require double confirmation in the UI.
 DESTRUCTIVE = {"drop_table", "drop_column", "drop_foreign_key"}
 
 
-def execute_ddl(engine: Engine, sql: str) -> None:
+def execute_ddl(engine: Engine, sql: str, *, after_ddl=None) -> None:
     """Execute a reviewed DDL statement in a transaction.
 
     This is the deliberate write channel; it does **not** go through
     ``ensure_readonly``. A failure (e.g. missing DDL privileges) is surfaced as
     :class:`DDLPermissionError` with a clear message rather than crashing.
     """
-    from sqlalchemy import text
-
     try:
         with engine.begin() as conn:
-            conn.execute(text(sql))
+            if (
+                conn.dialect.name == "sqlite"
+                and not conn.connection.driver_connection.in_transaction
+            ):
+                conn.exec_driver_sql("BEGIN")
+            conn.exec_driver_sql(sql)
+            if after_ddl:
+                after_ddl(conn)
     except Exception as exc:  # includes permission / syntax errors
         raise DDLPermissionError(
             f"DDL execution failed (check DDL privileges): {exc}"

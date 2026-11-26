@@ -9,10 +9,11 @@ later phase).
 from __future__ import annotations
 
 import importlib.util
+import re
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-from sqlalchemy import Engine, create_engine, event, text
+from sqlalchemy import Engine, create_engine, event
 from sqlalchemy.engine import URL
 from sqlalchemy.pool import StaticPool
 
@@ -74,6 +75,12 @@ def _build_url(config: ConnectionConfig) -> URL:
     if config.dialect in _FILE_DIALECTS:
         # No host/user; ``database`` is the file path (empty => in-memory).
         database = config.database or ":memory:"
+        if config.dialect == "sqlcipher":
+            if not config.encryption_key:
+                raise ValueError("Encrypted SQLite requires a passphrase.")
+            return URL.create(
+                drivername, password=config.encryption_key, database=database
+            )
         return URL.create(drivername=drivername, database=database)
 
     return URL.create(
@@ -96,6 +103,8 @@ def _session_statement(dialect: str, key: str, value: str) -> str | None:
     """
     if dialect not in _SET_DIALECTS:
         return None
+    if not re.fullmatch(r"[a-zA-Z_][a-zA-Z_0-9]*(?:\.[a-zA-Z_][a-zA-Z_0-9]*)*", key):
+        raise ValueError("Invalid session setting name.")
     safe = str(value).replace("'", "''")
     return f"SET {key} = '{safe}'"
 
@@ -140,23 +149,7 @@ def build_engine(config: ConnectionConfig) -> Engine:
     kwargs.update(config.engine_kwargs)
     engine = create_engine(url, **kwargs)
     _register_session_settings(engine, config)
-    _register_encryption_key(engine, config)
     return engine
-
-
-def _register_encryption_key(engine: Engine, config: ConnectionConfig) -> None:
-    """For SQLCipher, apply ``PRAGMA key`` on every new connection."""
-    if config.dialect != "sqlcipher" or not config.encryption_key:
-        return
-    safe = config.encryption_key.replace("'", "''")
-
-    @event.listens_for(engine, "connect")
-    def _apply_key(dbapi_connection: Any, _record: Any) -> None:
-        cursor = dbapi_connection.cursor()
-        try:
-            cursor.execute(f"PRAGMA key = '{safe}'")
-        finally:
-            cursor.close()
 
 
 def _build_encrypted_duckdb(config: ConnectionConfig) -> Engine:
@@ -180,6 +173,9 @@ def _build_encrypted_duckdb(config: ConnectionConfig) -> Engine:
         try:
             cursor.execute(f"ATTACH '{path}' AS encdb (ENCRYPTION_KEY '{key}')")
             cursor.execute("USE encdb")
+        except Exception:
+            # Native errors may include the ATTACH statement and its passphrase.
+            raise RuntimeError("Could not open the encrypted DuckDB file.") from None
         finally:
             cursor.close()
 
@@ -192,6 +188,21 @@ def _register_session_settings(engine: Engine, config: ConnectionConfig) -> None
         return
     settings = dict(config.session_settings)
     dialect = config.dialect
+
+    if config.dialect == "postgresql":
+
+        @event.listens_for(engine, "connect")
+        def _set_session(dbapi_conn, _record):
+            previous = dbapi_conn.autocommit
+            dbapi_conn.autocommit = True
+            try:
+                with dbapi_conn.cursor() as cursor:
+                    for key, value in settings.items():
+                        cursor.execute("SELECT set_config(%s, %s, false)", (key, value))
+            finally:
+                dbapi_conn.autocommit = previous
+
+        return
 
     @event.listens_for(engine, "connect")
     def _apply_session_settings(dbapi_connection: Any, _record: Any) -> None:
@@ -214,7 +225,12 @@ def test_connection(engine: Engine) -> bool:
     """Return ``True`` if a trivial ``SELECT 1`` succeeds against ``engine``."""
     try:
         with engine.connect() as conn:
-            conn.execute(text("SELECT 1"))
+            if engine.dialect.driver == "pysqlcipher":
+                conn.exec_driver_sql("SELECT count(*) FROM sqlite_master")
+            else:
+                from sqlalchemy import literal, select
+
+                conn.execute(select(literal(1)))
         return True
     except Exception:
         return False

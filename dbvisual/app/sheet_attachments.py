@@ -20,6 +20,18 @@ def record_key(view: SheetView, row: dict[str, Any]) -> str:
     return "_".join(parts) if parts else "row"
 
 
+def inserted_record_key(view: SheetView, primary_key) -> str:
+    """Project the database key into the same field order used by the saved view."""
+    if primary_key is None or not view.pk_fields:
+        raise ValueError("An attachment needs a complete record key.")
+    columns = view.field_to_column
+    keys = primary_key._mapping
+    projected = {field: keys.get(columns[field]) for field in view.pk_fields}
+    if len(projected) != len(primary_key) or None in projected.values():
+        raise ValueError("An attachment needs a complete record key.")
+    return record_key(view, projected)
+
+
 def add_attachment(
     store: AttachmentStore,
     app_id: int,

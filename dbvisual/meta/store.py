@@ -8,11 +8,12 @@ or at any path supplied by tests.
 from __future__ import annotations
 
 import json
+import secrets
 from pathlib import Path
 from typing import Any
 
 from platformdirs import user_data_dir
-from sqlalchemy import Engine, create_engine, delete, insert, select, update
+from sqlalchemy import Engine, create_engine, delete, event, insert, select, update
 
 from dbvisual.meta.models import (
     applications,
@@ -43,6 +44,11 @@ class MetadataStore:
         """
         path = Path(db_path) if db_path is not None else default_db_path()
         self.engine: Engine = create_engine(f"sqlite:///{path}")
+
+        @event.listens_for(self.engine, "connect")
+        def _enable_foreign_keys(dbapi_conn, _record):
+            dbapi_conn.execute("PRAGMA foreign_keys=ON")
+
         self.create_all()
 
     def create_all(self) -> None:
@@ -65,6 +71,7 @@ class MetadataStore:
         with self.engine.begin() as conn:
             result = conn.execute(
                 insert(connections).values(
+                    id=secrets.randbits(52) + 1,
                     name=name,
                     dialect=dialect,
                     host=host,
@@ -124,7 +131,9 @@ class MetadataStore:
     def create_application(self, name: str) -> int:
         """Insert an application and return its new id."""
         with self.engine.begin() as conn:
-            result = conn.execute(insert(applications).values(name=name))
+            result = conn.execute(
+                insert(applications).values(id=secrets.randbits(52) + 1, name=name)
+            )
             return int(result.inserted_primary_key[0])
 
     def list_applications(self) -> list[dict[str, Any]]:
@@ -172,6 +181,7 @@ class MetadataStore:
         with self.engine.begin() as conn:
             result = conn.execute(
                 insert(definitions).values(
+                    id=secrets.randbits(52) + 1,
                     app_id=app_id,
                     kind=kind,
                     name=name,
@@ -237,6 +247,7 @@ class MetadataStore:
         with self.engine.begin() as conn:
             result = conn.execute(
                 insert(webhooks).values(
+                    id=secrets.randbits(52) + 1,
                     definition_id=definition_id,
                     table_name=table_name,
                     name=name,
@@ -348,25 +359,23 @@ class MetadataStore:
         A locked view is immutable: the update is refused (returns 0) unless the
         change only clears the ``locked`` flag.
         """
-        current = self.get_view(view_id)
-        if current is None:
-            return 0
-        if current["locked"] and values.get("locked") is not False:
-            return 0
+        stmt = update(views).where(views.c.id == view_id)
+        if values != {"locked": False}:
+            stmt = stmt.where(views.c.locked == 0)
         if "config" in values:
             values["config_json"] = json.dumps(values.pop("config"))
         if "locked" in values:
             values["locked"] = 1 if values["locked"] else 0
         with self.engine.begin() as conn:
-            result = conn.execute(
-                update(views).where(views.c.id == view_id).values(**values)
-            )
+            result = conn.execute(stmt.values(**values))
             return result.rowcount
 
     def delete_view(self, view_id: int) -> int:
         """Delete a view by id; return the affected row count."""
         with self.engine.begin() as conn:
-            result = conn.execute(delete(views).where(views.c.id == view_id))
+            result = conn.execute(
+                delete(views).where(views.c.id == view_id, views.c.locked == 0)
+            )
             return result.rowcount
 
     # -- helpers ------------------------------------------------------------

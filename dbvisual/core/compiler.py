@@ -14,11 +14,11 @@ from sqlalchemy import (
     ColumnElement,
     MetaData,
     Select,
-    Table,
     and_,
     select,
 )
 
+from dbvisual.core.introspect import resolve_table
 from dbvisual.core.queryspec import Column, Filter, QuerySpec
 
 # Map query-spec operators to the corresponding SQLAlchemy column operations.
@@ -33,20 +33,9 @@ _SIMPLE_OPS = {
 }
 
 
-def _resolve_table(metadata: MetaData, name: str) -> Table:
-    """Return the reflected :class:`Table` for ``name`` (raw or schema-qualified)."""
-    tbl = metadata.tables.get(name)
-    if tbl is not None:
-        return tbl
-    for key, value in metadata.tables.items():
-        if key.split(".")[-1] == name:
-            return value
-    raise KeyError(f"Table not found in metadata: {name!r}")
-
-
 def _resolve_column(metadata: MetaData, ref: Column) -> ColumnElement[Any]:
     """Return the SQLAlchemy column referenced by a query-spec :class:`Column`."""
-    tbl = _resolve_table(metadata, ref.table)
+    tbl = resolve_table(metadata, ref.table)
     try:
         return tbl.c[ref.name]
     except KeyError as exc:  # pragma: no cover - defensive
@@ -80,7 +69,14 @@ def compile_select(
     ``params`` maps parameter names to their runtime values. A filter whose
     parameter is absent from ``params`` is skipped, allowing optional filters.
     """
-    main = _resolve_table(metadata, spec.main_table)
+    main = resolve_table(metadata, spec.main_table)
+
+    joined = {spec.main_table, *(rel.table for rel in spec.related)}
+    if any(
+        ref.table not in joined
+        for ref in [*spec.columns, *(flt.column for flt in spec.filters)]
+    ):
+        raise ValueError("A query column refers to a table without a join.")
 
     # --- SELECT list -------------------------------------------------------
     selected: list[ColumnElement[Any]] = []
@@ -95,9 +91,23 @@ def compile_select(
     # --- JOINs for related tables -----------------------------------------
     from_clause: Any = main
     for rel in spec.related:
-        remote = _resolve_table(metadata, rel.table)
-        onclause = main.c[rel.local_col] == remote.c[rel.remote_col]
-        from_clause = from_clause.join(remote, onclause)
+        remote = resolve_table(metadata, rel.table)
+        matching = [
+            fk
+            for fk in main.foreign_key_constraints
+            if any(
+                e.parent.name == rel.local_col and e.column is remote.c[rel.remote_col]
+                for e in fk.elements
+            )
+        ]
+        if len(matching) > 1:
+            raise ValueError("Ambiguous lookup foreign key.")
+        onclause = (
+            and_(*(e.parent == e.column for e in matching[0].elements))
+            if matching
+            else main.c[rel.local_col] == remote.c[rel.remote_col]
+        )
+        from_clause = from_clause.outerjoin(remote, onclause)
     if spec.related:
         stmt = stmt.select_from(from_clause)
 

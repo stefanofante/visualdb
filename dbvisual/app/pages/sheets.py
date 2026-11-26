@@ -26,7 +26,7 @@ from dbvisual.app.sheet_service import (
     build_view,
     get_table,
     load_rows,
-    resolve_engine,
+    resolve_saved_engine,
 )
 from dbvisual.app.shell import frame
 from dbvisual.app.state import get_state
@@ -98,19 +98,22 @@ def _create_dialog(on_saved) -> None:
 
         def load_schema() -> None:
             schema_box.clear()
+            ctx.clear()
             cid = conn_select.value
             if cid is None:
                 result.set_text("Select a connection.")
                 result.classes(replace="text-sm text-red-600")
                 return
             conn = state.store.get_connection(int(cid))
-            password = state.secrets.get_password(int(cid))
+
             if conn is None:
                 result.set_text("Connection not found.")
                 result.classes(replace="text-sm text-red-600")
                 return
             try:
-                _engine, metadata = resolve_engine(conn, password, refresh=True)
+                _engine, metadata = resolve_saved_engine(
+                    conn, state.secrets, refresh=True
+                )
                 tables = list_tables(metadata)
             except Exception as exc:
                 result.set_text(f"Schema error: {exc}")
@@ -275,17 +278,18 @@ def sheet_editor(definition_id: int) -> None:
             ui.label("The sheet's connection is not available.").classes("text-red-600")
             return
 
-        password = state.secrets.get_password(conn["id"])
-        session_settings = rls_session_settings(conn, sheet_spec.rls, get_identity())
-        if sheet_spec.rls and rls_available(conn) and not get_identity():
-            ui.notify(
-                "RLS enabled but no identity set: the policies will not filter anything.",
-                type="warning",
-            )
+        identity = get_identity()
+        session_settings = rls_session_settings(conn, sheet_spec.rls, identity)
+        if sheet_spec.rls and rls_available(conn) and not identity:
+            ui.label(
+                "Set your local identity before opening this RLS-enabled definition."
+            ).classes("text-red-600")
+            return
         try:
-            engine, metadata = resolve_engine(
-                conn, password, session_settings=session_settings
+            engine, metadata = resolve_saved_engine(
+                conn, state.secrets, session_settings=session_settings
             )
+            engine = engine.execution_options(dbvisual_definition_id=definition_id)
             view = build_view(sheet_spec.spec, metadata)
             _fields, rows = load_rows(engine, metadata, sheet_spec.spec)
         except Exception as exc:
@@ -295,6 +299,10 @@ def sheet_editor(definition_id: int) -> None:
         with ui.row().classes("w-full items-center justify-between"):
             ui.label(definition["name"]).classes("text-2xl font-bold")
             with ui.row().classes("gap-2"):
+                discard = ui.button(
+                    "Discard edits and reload", on_click=ui.navigate.reload
+                ).props("outline")
+                discard.set_visibility(False)
                 save_btn = ui.button("Save", icon="save").props("color=primary")
                 ui.button(
                     "Views",
@@ -347,18 +355,22 @@ def sheet_editor(definition_id: int) -> None:
                 ui.notify("No changes to save.", type="info")
                 return
             try:
-                apply_batch(engine, ops)
+                apply_batch(engine, ops, before_commit=grid.install_attachments)
             except ConflictError:
-                _f, fresh = load_rows(engine, metadata, sheet_spec.spec)
-                grid.reload(fresh)
+                grid.finish_attachments(False)
+                discard.set_visibility(True)
                 ui.notify(
-                    "The record was modified by someone else: grid reloaded, retry.",
+                    "A record changed in the database. Your edits are still visible.",
                     type="warning",
                 )
                 return
             except Exception as exc:
+                grid.finish_attachments(False)
                 ui.notify(f"Save cancelled (rollback): {exc}", type="negative")
                 return
+            discard.set_visibility(False)
+            grid.finish_attachments(True)
+            grid.cleanup_attachments()
             _f, fresh = load_rows(engine, metadata, sheet_spec.spec)
             grid.reload(fresh)
             ui.notify("Changes saved.", type="positive")

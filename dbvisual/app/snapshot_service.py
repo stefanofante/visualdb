@@ -17,6 +17,7 @@ import html
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from dbvisual.app.app_settings import data_dir
 from dbvisual.app.report_service import (
@@ -41,7 +42,7 @@ def snapshot_dir(dir_override: str | Path | None = None) -> Path:
 
 
 def _timestamp() -> str:
-    return datetime.now().strftime("%Y%m%d-%H%M%S")
+    return datetime.now().strftime("%Y%m%d-%H%M%S") + "-" + uuid4().hex
 
 
 def _safe_name(name: str) -> str:
@@ -139,7 +140,9 @@ def _html_grouped(
                 cells.append(f"<td>{html.escape(val)}</td>")
             else:
                 cells.append(f"<td>{_cell(r.get(c))}</td>")
-        body.append(f"<tr class='{kind}'>{''.join(cells)}</tr>")
+        body.append(
+            f"<tr class='{html.escape(str(kind), quote=True)}'>{''.join(cells)}</tr>"
+        )
     return (
         f"<table><thead><tr>{header}</tr></thead><tbody>{''.join(body)}</tbody></table>"
     )
@@ -197,13 +200,24 @@ def write_xlsx_snapshot(
     ws = wb.active
     ws.title = "Snapshot"
 
+    def append(values):
+        from openpyxl.cell import Cell
+
+        cells = []
+        for value in values:
+            cell = Cell(ws, value=value)
+            if isinstance(value, str):
+                cell.data_type = "s"
+            cells.append(cell)
+        ws.append(cells)
+
     bold = Font(bold=True)
     group_fill = PatternFill("solid", fgColor="EEF2FF")
     subtotal_fill = PatternFill("solid", fgColor="EEF2F7")
 
     if group_by:
         header = ["Group", *fields, "Count"]
-        ws.append(header)
+        append(header)
         for c in ws[1]:
             c.font = bold
         tree = group_with_subtotals(
@@ -217,18 +231,18 @@ def write_xlsx_snapshot(
             for f in fields:
                 row_values.append(r.get(f))
             row_values.append(r.get("_count"))
-            ws.append(row_values)
+            append(row_values)
             if kind in ("group", "subtotal"):
                 fill = group_fill if kind == "group" else subtotal_fill
                 for c in ws[ws.max_row]:
                     c.font = bold
                     c.fill = fill
     else:
-        ws.append(list(fields))
+        append(fields)
         for c in ws[1]:
             c.font = bold
         for r in rows:
-            ws.append([r.get(f) for f in fields])
+            append([r.get(f) for f in fields])
 
     path = snapshot_dir(dir_override) / f"{_safe_name(title)}-{_timestamp()}.xlsx"
     wb.save(path)

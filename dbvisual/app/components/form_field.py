@@ -15,7 +15,7 @@ from nicegui import ui
 from dbvisual.app.form_service import FieldConfig
 from dbvisual.app.validation import validate_field
 from dbvisual.meta.attachments import (
-    AttachmentStore,
+    AttachmentDraft,
     dump_metadata,
     load_metadata,
 )
@@ -48,7 +48,7 @@ class FormField:
         col_type: str = "",
         options: list[dict[str, Any]] | None = None,
         on_change: Callable[[], None] | None = None,
-        attachments: AttachmentStore | None = None,
+        attachments: AttachmentDraft | None = None,
         record_key: str = "",
         app_id: int = 0,
     ) -> None:
@@ -122,21 +122,26 @@ class FormField:
                     ui.label(f"{meta['filename']} ({meta['size']} B)").classes(
                         "text-sm"
                     )
+                    if self._attachments is not None:
+                        ui.button(
+                            icon="download",
+                            on_click=lambda m=meta: ui.download(
+                                self._attachments.read(self._record_key, m["id"]),
+                                m["filename"],
+                            ),
+                        ).props("flat dense")
+                    if not self.editable:
+                        continue
                     ui.button(
                         icon="delete",
                         on_click=lambda m=meta: self._remove_attachment(m),
                     ).props("flat dense color=negative size=sm")
 
-    def _on_upload(self, event: Any) -> None:
-        if self._attachments is None:
+    async def _on_upload(self, event: Any) -> None:
+        if self._attachments is None or not self.editable:
             return
-        content = event.content.read()
-        meta = self._attachments.save(
-            self._app_id,
-            self._record_key,
-            event.name,
-            content,
-            getattr(event, "type", "application/octet-stream"),
+        meta = self._attachments.upload(
+            event.file.name, await event.file.read(), event.file.content_type
         )
         items = load_metadata(self._att_value)
         items.append(meta)
@@ -145,8 +150,8 @@ class FormField:
         self._changed()
 
     def _remove_attachment(self, meta: dict[str, Any]) -> None:
-        if self._attachments is not None:
-            self._attachments.delete(self._app_id, self._record_key, meta["id"])
+        if not self.editable:
+            return
         items = [m for m in load_metadata(self._att_value) if m["id"] != meta["id"]]
         self._att_value = dump_metadata(items)
         self._render_attachments()

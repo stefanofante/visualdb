@@ -291,8 +291,12 @@ def connections_page() -> None:
                                 ).props("flat color=negative size=sm")
 
         def _delete(conn: dict[str, Any]) -> None:
-            state.store.delete_connection(conn["id"])
             state.secrets.delete_password(conn["id"])
+            state.secrets.delete_secret(_enc_secret_key(conn["id"]))
+            state.store.delete_connection(conn["id"])
+            from dbvisual.app.sheet_service import clear_engine_cache
+
+            clear_engine_cache()
             refresh()
 
         refresh()

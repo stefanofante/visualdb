@@ -36,6 +36,10 @@ def reflect_schema(engine: Engine, schema: str | None = None) -> MetaData:
 
     ``schema`` may be provided for dialects that namespace tables.
     """
+    if engine.dialect.name == "duckdb":
+        from dbvisual.core.duckdb_catalog import reflect_duckdb
+
+        return reflect_duckdb(engine, schema)
     metadata = MetaData(schema=schema)
     metadata.reflect(bind=engine)
     return metadata
@@ -46,21 +50,19 @@ def list_tables(metadata: MetaData) -> list[str]:
     return sorted(metadata.tables.keys())
 
 
-def _resolve_table(metadata: MetaData, table: str):
+def resolve_table(metadata: MetaData, table: str):
     """Return the reflected ``Table`` for ``table`` (raw or schema-qualified)."""
-    tbl = metadata.tables.get(table)
-    if tbl is None:
-        # Try matching by bare name when a schema prefix is present.
-        for key, value in metadata.tables.items():
-            if key == table or key.split(".")[-1] == table:
-                return value
-        raise KeyError(f"Table not found in metadata: {table!r}")
-    return tbl
+    if table in metadata.tables:
+        return metadata.tables[table]
+    matches = [t for t in metadata.tables.values() if t.name == table]
+    if len(matches) == 1:
+        return matches[0]
+    raise KeyError(f"Missing or ambiguous table: {table!r}")
 
 
 def get_columns(metadata: MetaData, table: str) -> list[ColumnInfo]:
     """Return column metadata (name, type, nullable, pk) for ``table``."""
-    tbl = _resolve_table(metadata, table)
+    tbl = resolve_table(metadata, table)
     return [
         ColumnInfo(
             name=col.name,
@@ -78,14 +80,14 @@ def detect_foreign_keys(metadata: MetaData, table: str) -> list[ForeignKeyInfo]:
     Each entry maps a local column to a remote ``table.column`` pair, which the
     compiler uses to build automatic joins for related tables.
     """
-    tbl = _resolve_table(metadata, table)
+    tbl = resolve_table(metadata, table)
     relations: list[ForeignKeyInfo] = []
     for fk in tbl.foreign_keys:
         target = fk.column  # remote Column object
         relations.append(
             ForeignKeyInfo(
                 local_col=fk.parent.name,
-                remote_table=target.table.name,
+                remote_table=target.table.key,
                 remote_col=target.name,
             )
         )
@@ -94,7 +96,7 @@ def detect_foreign_keys(metadata: MetaData, table: str) -> list[ForeignKeyInfo]:
 
 def get_primary_key(metadata: MetaData, table: str) -> list[str]:
     """Return the ordered list of primary-key column names for ``table``."""
-    tbl = _resolve_table(metadata, table)
+    tbl = resolve_table(metadata, table)
     return [col.name for col in tbl.primary_key.columns]
 
 

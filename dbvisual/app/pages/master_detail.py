@@ -24,7 +24,12 @@ from dbvisual.app.master_detail_service import (
     suggest_detail_fk,
 )
 from dbvisual.app.query_builder import build_queryspec
-from dbvisual.app.sheet_service import build_view, get_table, load_rows, resolve_engine
+from dbvisual.app.sheet_service import (
+    build_view,
+    get_table,
+    load_rows,
+    resolve_saved_engine,
+)
 from dbvisual.app.shell import frame
 from dbvisual.app.state import get_state
 from dbvisual.core.introspect import get_columns, list_tables
@@ -81,15 +86,16 @@ def _create_dialog(on_saved) -> None:
 
         def load_schema() -> None:
             box.clear()
+            ctx.clear()
             cid = conn_select.value
             if cid is None:
                 return
             conn = state.store.get_connection(int(cid))
-            password = state.secrets.get_password(int(cid))
+
             if conn is None:
                 return
             try:
-                _e, metadata = resolve_engine(conn, password, refresh=True)
+                _e, metadata = resolve_saved_engine(conn, state.secrets, refresh=True)
                 tables = list_tables(metadata)
             except Exception as exc:
                 result.set_text(f"Schema error: {exc}")
@@ -218,9 +224,9 @@ def master_detail_editor(definition_id: int) -> None:
         if conn is None:
             ui.label("Connection not available.").classes("text-red-600")
             return
-        password = state.secrets.get_password(conn["id"])
+
         try:
-            engine, metadata = resolve_engine(conn, password)
+            engine, metadata = resolve_saved_engine(conn, state.secrets)
             master_view = build_view(md.master_spec, metadata)
             master_table = get_table(metadata, md.master_spec.main_table)
             _f, masters = load_rows(engine, metadata, md.master_spec)
@@ -346,19 +352,27 @@ def master_detail_editor(definition_id: int) -> None:
             try:
                 execute_save(engine, plan)
             except ConflictError:
-                reload()
-                ui.notify("Concurrency conflict: reloaded, retry.", type="warning")
+                discard.set_visibility(True)
+                ui.notify(
+                    "A record changed in the database. Your edits are still visible.",
+                    type="warning",
+                )
                 return
             except Exception as exc:
                 ui.notify(f"Save cancelled (rollback): {exc}", type="negative")
                 return
             reload()
+            discard.set_visibility(False)
             ui.notify("Master and detail saved.", type="positive")
 
         with ui.row().classes("items-center gap-2"):
             ui.button(icon="chevron_left", on_click=lambda: go(-1)).props("flat")
             ui.button(icon="chevron_right", on_click=lambda: go(1)).props("flat")
             ui.button("New master", icon="add", on_click=new_master).props("outline")
+            discard = ui.button(
+                "Discard edits and reload", on_click=ui.navigate.reload
+            ).props("outline")
+            discard.set_visibility(False)
             ui.button("Save all", icon="save", on_click=save).props("color=primary")
             ui.button(
                 "Back",

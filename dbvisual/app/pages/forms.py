@@ -26,16 +26,17 @@ from dbvisual.app.form_service import (
     get_table,
     load_rows,
     resolve_available_values,
-    resolve_engine,
     save_record,
 )
 from dbvisual.app.identity import get_identity
 from dbvisual.app.query_builder import build_queryspec
 from dbvisual.app.rls import rls_available, rls_session_settings
+from dbvisual.app.sheet_attachments import inserted_record_key
+from dbvisual.app.sheet_service import resolve_saved_engine
 from dbvisual.app.shell import frame
 from dbvisual.app.state import get_state
 from dbvisual.core.introspect import detect_foreign_keys, get_columns, list_tables
-from dbvisual.meta.attachments import AttachmentStore
+from dbvisual.meta.attachments import AttachmentDraft, AttachmentStore, load_metadata
 
 
 def _auto_fields(spec_columns: list[Any], main_table: str) -> list[FieldConfig]:
@@ -84,15 +85,18 @@ def _create_dialog(on_saved) -> None:
 
         def load_schema() -> None:
             schema_box.clear()
+            ctx.clear()
             cid = conn_select.value
             if cid is None:
                 return
             conn = state.store.get_connection(int(cid))
-            password = state.secrets.get_password(int(cid))
+
             if conn is None:
                 return
             try:
-                _engine, metadata = resolve_engine(conn, password, refresh=True)
+                _engine, metadata = resolve_saved_engine(
+                    conn, state.secrets, refresh=True
+                )
                 tables = list_tables(metadata)
             except Exception as exc:
                 result.set_text(f"Schema error: {exc}")
@@ -230,17 +234,18 @@ def form_editor(definition_id: int) -> None:
             ui.label("Connection not available.").classes("text-red-600")
             return
 
-        password = state.secrets.get_password(conn["id"])
-        session_settings = rls_session_settings(conn, form_spec.rls, get_identity())
-        if form_spec.rls and rls_available(conn) and not get_identity():
-            ui.notify(
-                "RLS enabled but no identity set: the policies will not filter anything.",
-                type="warning",
-            )
+        identity = get_identity()
+        session_settings = rls_session_settings(conn, form_spec.rls, identity)
+        if form_spec.rls and rls_available(conn) and not identity:
+            ui.label(
+                "Set your local identity before opening this RLS-enabled definition."
+            ).classes("text-red-600")
+            return
         try:
-            engine, metadata = resolve_engine(
-                conn, password, session_settings=session_settings
+            engine, metadata = resolve_saved_engine(
+                conn, state.secrets, session_settings=session_settings
             )
+            engine = engine.execution_options(dbvisual_definition_id=definition_id)
             view = build_view(form_spec.spec, metadata)
             _f, records = load_rows(engine, metadata, form_spec.spec)
         except Exception as exc:
@@ -249,6 +254,12 @@ def form_editor(definition_id: int) -> None:
 
         table = get_table(metadata, form_spec.spec.main_table)
         attachments = AttachmentStore()
+        draft = AttachmentDraft(attachments, definition["app_id"])
+        attachment_fields = [
+            fc.field
+            for fc in form_spec.fields
+            if fc.input == "attachment" and fc.field in view.editable_fields
+        ]
         col_types = _column_types(metadata, view)
 
         st: dict[str, Any] = {"index": 0, "is_new": not records, "original": None}
@@ -295,7 +306,7 @@ def form_editor(definition_id: int) -> None:
                         col_type=col_types.get(fc.field, ""),
                         options=options,
                         on_change=apply_rules,
-                        attachments=attachments,
+                        attachments=draft,
                         record_key=str(pk_val),
                         app_id=definition["app_id"],
                     )
@@ -331,6 +342,19 @@ def form_editor(definition_id: int) -> None:
             if violations:
                 ui.notify("; ".join(violations), type="negative")
                 return
+            original = st["original"] or {}
+
+            def install(pk):
+                values = [record.get(f) for f in attachment_fields]
+                if not any(load_metadata(value) for value in values):
+                    return
+                key = (
+                    inserted_record_key(view, pk)
+                    if st["is_new"]
+                    else _record_key(view, original)
+                )
+                draft.install(key, values)
+
             try:
                 save_record(
                     engine,
@@ -339,17 +363,28 @@ def form_editor(definition_id: int) -> None:
                     record,
                     is_new=st["is_new"],
                     original=st["original"],
+                    before_commit=install,
                 )
             except ConflictError:
-                reload()
+                draft.finish(False)
+                discard.set_visibility(True)
                 ui.notify(
-                    "The record was modified by someone else: reloaded, retry.",
+                    "The record changed in the database. Your edits are still visible.",
                     type="warning",
                 )
                 return
             except Exception as exc:
+                draft.finish(False)
                 ui.notify(f"Save failed: {exc}", type="negative")
                 return
+            discard.set_visibility(False)
+            draft.finish(True)
+            if original:
+                draft.discard_removed(
+                    _record_key(view, original),
+                    [original.get(f) for f in attachment_fields],
+                    [record.get(f) for f in attachment_fields],
+                )
             reload()
             ui.notify("Record saved.", type="positive")
 
@@ -357,8 +392,17 @@ def form_editor(definition_id: int) -> None:
             if st["is_new"] or not records:
                 return
             record = records[st["index"]]
-            delete_form_record(engine, view, table, record)
-            attachments.delete_record(definition["app_id"], _record_key(view, record))
+            try:
+                delete_form_record(engine, view, table, record)
+            except ConflictError as exc:
+                ui.notify(str(exc), type="warning")
+                discard.set_visibility(True)
+                return
+            draft.discard_removed(
+                _record_key(view, record),
+                [record.get(f) for f in attachment_fields],
+                [],
+            )
             reload()
             ui.notify("Record deleted.", type="positive")
 
@@ -366,6 +410,10 @@ def form_editor(definition_id: int) -> None:
             ui.button(icon="chevron_left", on_click=lambda: go(-1)).props("flat")
             ui.button(icon="chevron_right", on_click=lambda: go(1)).props("flat")
             ui.button("New", icon="add", on_click=new_record).props("outline")
+            discard = ui.button(
+                "Discard edits and reload", on_click=ui.navigate.reload
+            ).props("outline")
+            discard.set_visibility(False)
             ui.button("Save", icon="save", on_click=save).props("color=primary")
             ui.button("Delete", icon="delete", on_click=delete).props(
                 "flat color=negative"

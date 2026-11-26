@@ -51,6 +51,11 @@ def _pk_where(table: Table, pk_values: dict[str, Any]):
     """Build a WHERE clause matching ``pk_values`` on ``table``."""
     if not pk_values:
         raise ValueError("pk_values must not be empty")
+    if (
+        set(pk_values) != {column.key for column in table.primary_key}
+        or None in pk_values.values()
+    ):
+        raise ValueError("A complete primary key is required for a record write.")
     return and_(*(table.c[col] == val for col, val in pk_values.items()))
 
 
@@ -78,21 +83,42 @@ def _exec_update(
     conditions = [_pk_where(table, pk_values)]
     if expected:
         conditions.append(and_(*(table.c[col] == val for col, val in expected.items())))
-    result = conn.execute(update(table).where(and_(*conditions)).values(**values))
+    stmt = update(table).where(and_(*conditions)).values(**values)
+    if conn.dialect.name == "duckdb":
+        return len(conn.execute(stmt.returning(*table.primary_key)).all())
+    result = conn.execute(stmt)
     return result.rowcount
 
 
-def _exec_delete(conn: Connection, table: Table, pk_values: dict[str, Any]) -> int:
+def _exec_delete(
+    conn: Connection, table: Table, pk_values: dict[str, Any], expected=None
+) -> int:
     """Delete the row identified by ``pk_values``; return affected row count."""
-    result = conn.execute(delete(table).where(_pk_where(table, pk_values)))
+    stmt = delete(table).where(_pk_where(table, pk_values))
+    for name, value in (expected or {}).items():
+        stmt = stmt.where(table.c[name] == value)
+    if conn.dialect.name == "duckdb":
+        return len(conn.execute(stmt.returning(*table.primary_key)).all())
+    result = conn.execute(stmt)
     return result.rowcount
 
 
-def insert_record(engine: Engine, table: Table, values: dict[str, Any]) -> Any:
+def insert_record(
+    engine: Engine, table: Table, values: dict[str, Any], *, before_commit=None
+) -> Any:
     """Insert a single row and return its primary key (if the driver reports one)."""
     with engine.begin() as conn:
         result = _exec_insert(conn, table, values)
-    emit(CrudEvent("created", table.name, dict(values)))
+        if before_commit:
+            before_commit(result)
+    emit(
+        CrudEvent(
+            "created",
+            table.name,
+            dict(values),
+            engine.get_execution_options().get("dbvisual_definition_id"),
+        )
+    )
     return result
 
 
@@ -102,6 +128,8 @@ def update_record(
     pk_values: dict[str, Any],
     values: dict[str, Any],
     expected: dict[str, Any] | None = None,
+    *,
+    before_commit=None,
 ) -> int:
     """Update the row matching ``pk_values`` and return the affected row count.
 
@@ -115,15 +143,37 @@ def update_record(
             raise ConflictError(
                 "The record was modified by someone else: reload and retry."
             )
-    emit(CrudEvent("updated", table.name, {**pk_values, **values}))
+        if before_commit and affected != 0:
+            before_commit(None)
+    if affected != 0:
+        emit(
+            CrudEvent(
+                "updated",
+                table.name,
+                {**pk_values, **values},
+                engine.get_execution_options().get("dbvisual_definition_id"),
+            )
+        )
     return affected
 
 
-def delete_record(engine: Engine, table: Table, pk_values: dict[str, Any]) -> int:
+def delete_record(
+    engine: Engine, table: Table, pk_values: dict[str, Any], expected=None
+) -> int:
     """Delete the row matching ``pk_values`` and return the affected row count."""
     with engine.begin() as conn:
-        affected = _exec_delete(conn, table, pk_values)
-    emit(CrudEvent("deleted", table.name, dict(pk_values)))
+        affected = _exec_delete(conn, table, pk_values, expected)
+        if expected is not None and affected == 0:
+            raise ConflictError("Record changed or already removed.")
+    if affected != 0:
+        emit(
+            CrudEvent(
+                "deleted",
+                table.name,
+                dict(pk_values),
+                engine.get_execution_options().get("dbvisual_definition_id"),
+            )
+        )
     return affected
 
 
@@ -136,6 +186,19 @@ def _apply(conn: Connection, op: Operation) -> Any:
     if op.kind == "update":
         if op.pk_values is None or op.values is None:
             raise ValueError("update operation requires 'pk_values' and 'values'")
+        if not op.values:
+            conditions = [_pk_where(op.table, op.pk_values)]
+            conditions.extend(
+                op.table.c[k] == v for k, v in (op.expected or {}).items()
+            )
+            from sqlalchemy import select
+
+            if (
+                conn.execute(select(*op.table.primary_key).where(*conditions)).first()
+                is None
+            ):
+                raise ConflictError("Master record is no longer available.")
+            return 0
         affected = _exec_update(conn, op.table, op.pk_values, op.values, op.expected)
         if op.expected is not None and affected == 0:
             raise ConflictError(
@@ -145,7 +208,10 @@ def _apply(conn: Connection, op: Operation) -> Any:
     if op.kind == "delete":
         if op.pk_values is None:
             raise ValueError("delete operation requires 'pk_values'")
-        return _exec_delete(conn, op.table, op.pk_values)
+        affected = _exec_delete(conn, op.table, op.pk_values, op.expected)
+        if affected == 0:
+            raise ConflictError("Record changed or already removed.")
+        return affected
     raise ValueError(f"Unknown operation kind: {op.kind!r}")  # pragma: no cover
 
 
@@ -155,6 +221,7 @@ def save_master_detail(
     detail_ops: list[Operation],
     *,
     link: Callable[[Any, list[Operation]], None] | None = None,
+    before_commit: Callable[[list[Any]], None] | None = None,
 ) -> list[Any]:
     """Execute the master and detail operations in a single transaction.
 
@@ -177,9 +244,16 @@ def save_master_detail(
             link(master_result, detail_ops)
         for op in detail_ops:
             results.append(_apply(conn, op))
+        if before_commit:
+            before_commit(results)
     # Emit events only after the whole transaction commits successfully.
-    for op in (master_op, *detail_ops):
-        emit(_event_for_op(op))
+    for op, result in zip((master_op, *detail_ops), results, strict=True):
+        if op.kind == "insert" or result != 0:
+            event = _event_for_op(op)
+            event.definition_id = engine.get_execution_options().get(
+                "dbvisual_definition_id"
+            )
+            emit(event)
     return results
 
 

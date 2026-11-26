@@ -16,10 +16,10 @@ from dbvisual.app.ai.settings import get_ai_config, get_api_key
 from dbvisual.app.schema_service import (
     csv_create_table_ddl,
     generate_ddl_via_ai,
-    rows_from_csv,
+    insert_csv_rows,
     table_to_csv,
 )
-from dbvisual.app.sheet_service import get_table, resolve_engine
+from dbvisual.app.sheet_service import get_table, resolve_saved_engine
 from dbvisual.app.shell import frame
 from dbvisual.app.state import get_state
 from dbvisual.core.introspect import (
@@ -40,7 +40,12 @@ from dbvisual.core.schema_ddl import (
 
 
 def _review_and_execute(
-    engine: Any, sql: str, *, destructive: bool, on_done: Callable[[], None]
+    engine: Any,
+    sql: str,
+    *,
+    destructive: bool,
+    on_done: Callable[[], None],
+    after_ddl=None,
 ) -> None:
     """Show the exact SQL and execute only after (double) confirmation."""
     with ui.dialog() as dialog, ui.card().classes("w-[620px] gap-3"):
@@ -59,7 +64,7 @@ def _review_and_execute(
                 )
                 return
             try:
-                execute_ddl(engine, sql)
+                execute_ddl(engine, sql, after_ddl=after_ddl)
             except Exception as exc:
                 ui.notify(str(exc), type="negative")
                 return
@@ -101,11 +106,13 @@ def schema_page() -> None:
             if cid is None:
                 return
             conn = state.store.get_connection(int(cid))
-            password = state.secrets.get_password(int(cid))
+
             if conn is None:
                 return
             try:
-                engine, metadata = resolve_engine(conn, password, refresh=True)
+                engine, metadata = resolve_saved_engine(
+                    conn, state.secrets, refresh=True
+                )
                 tables = list_tables(metadata)
             except Exception as exc:
                 with body:
@@ -296,7 +303,7 @@ def schema_page() -> None:
                         return
                     dlg.close()
                     parent.close()
-                    _review_and_execute(engine, sql, destructive=False, on_done=on_done)
+                    _review_and_execute(engine, sql, destructive=True, on_done=on_done)
 
                 with ui.row().classes("w-full justify-end gap-2"):
                     ui.button("Generate", on_click=go).props("color=primary")
@@ -363,9 +370,14 @@ def schema_page() -> None:
                 tname = ui.input("New table name").classes("w-full")
                 holder: dict[str, str] = {}
 
-                def _on_upload(e: Any) -> None:
-                    holder["text"] = e.content.read().decode("utf-8")
-                    ui.notify(f"CSV loaded: {e.name}", type="info")
+                async def _on_upload(e: Any) -> None:
+                    holder.clear()
+                    try:
+                        holder["text"] = await e.file.text(encoding="utf-8-sig")
+                    except UnicodeError:
+                        ui.notify("Use a UTF-8 encoded CSV file.", type="warning")
+                        return
+                    ui.notify(f"CSV loaded: {e.file.name}", type="info")
 
                 ui.upload(on_upload=_on_upload, auto_upload=True).classes("w-full")
 
@@ -373,42 +385,27 @@ def schema_page() -> None:
                     if not tname.value or "text" not in holder:
                         ui.notify("Table name and CSV are required.", type="warning")
                         return
-                    sql, header = csv_create_table_ddl(
-                        dialect, tname.value, holder["text"]
-                    )
+                    table_name, csv_text = tname.value, holder["text"]
+                    try:
+                        sql, _ = csv_create_table_ddl(dialect, table_name, csv_text)
+                    except ValueError as exc:
+                        ui.notify(str(exc), type="warning")
+                        return
                     dlg.close()
-
-                    def after_create() -> None:
-                        _fill_csv(engine, tname.value, header, holder["text"])
-                        on_done()
-
                     _review_and_execute(
-                        engine, sql, destructive=False, on_done=after_create
+                        engine,
+                        sql,
+                        destructive=False,
+                        on_done=on_done,
+                        after_ddl=lambda conn: insert_csv_rows(
+                            conn, table_name, csv_text
+                        ),
                     )
 
                 with ui.row().classes("w-full justify-end gap-2"):
                     ui.button("Review DDL", on_click=go).props("color=primary")
                     ui.button("Cancel", on_click=dlg.close).props("flat")
             dlg.open()
-
-        def _fill_csv(engine: Any, table: str, header: list[str], text: str) -> None:
-            from sqlalchemy import text as sa_text
-
-            _h, rows = rows_from_csv(text)
-            if not rows:
-                return
-            cols = ", ".join(header)
-            binds = ", ".join(f":{h}" for h in header)
-            stmt = sa_text(f"INSERT INTO {table} ({cols}) VALUES ({binds})")
-            with engine.begin() as conn:
-                for r in rows:
-                    conn.execute(
-                        stmt,
-                        {
-                            h: (r[i] if i < len(r) else None)
-                            for i, h in enumerate(header)
-                        },
-                    )
 
         def _diagram_dialog() -> None:
             metadata, tables = ctx["metadata"], ctx["tables"]

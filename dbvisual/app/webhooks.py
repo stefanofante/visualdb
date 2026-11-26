@@ -121,10 +121,12 @@ class WebhookService:
 
     def handle_event(self, event: CrudEvent) -> None:
         """Find matching webhooks for ``event`` and dispatch each (never raises)."""
+        if event.definition_id is None:
+            return
         try:
             hooks = [
                 wh
-                for wh in self._store.list_webhooks()
+                for wh in self._store.list_webhooks(event.definition_id)
                 if wh["table_name"] == event.table and event.kind in wh["events"]
             ]
         except Exception:  # store failure must not break the save

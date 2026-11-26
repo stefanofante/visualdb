@@ -14,6 +14,7 @@ from dbvisual.core.introspect import (
     detect_foreign_keys,
     get_columns,
     get_primary_key,
+    resolve_table,
 )
 from dbvisual.core.queryspec import Column, QuerySpec, Related
 
@@ -46,13 +47,21 @@ def build_queryspec(
     columns = [Column(table=main_table, name=name, alias=name) for name in selected]
 
     related: list[Related] = []
-    fks = {fk.remote_table: fk for fk in detect_foreign_keys(metadata, main_table)}
-    for rtable in related_tables:
-        fk = fks.get(rtable)
-        if fk is None:  # not on the "one" side -> reject (would duplicate main rows)
+    main = resolve_table(metadata, main_table)
+    for rtable in dict.fromkeys(related_tables):
+        target = resolve_table(metadata, rtable)
+        matches = [
+            constraint
+            for constraint in main.foreign_key_constraints
+            if constraint.referred_table is target
+        ]
+        if len(matches) > 1 or target is main:
+            raise ValueError(f"Choose an unambiguous lookup table for {rtable}.")
+        if not matches:  # not on the "one" side -> reject (would duplicate main rows)
             continue
+        fk = matches[0].elements[0]
         related.append(
-            Related(table=rtable, local_col=fk.local_col, remote_col=fk.remote_col)
+            Related(table=rtable, local_col=fk.parent.name, remote_col=fk.column.name)
         )
         for col in get_columns(metadata, rtable):
             columns.append(

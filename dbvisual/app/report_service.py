@@ -8,13 +8,12 @@ with bound parameters. Nothing here writes to the target database.
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 from dataclasses import field as dc_field
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
-from sqlalchemy import Engine, MetaData, text
+from sqlalchemy import Engine, MetaData
 
 from dbvisual.app.form_service import AvailableValues, resolve_available_values
 from dbvisual.app.sheet_service import (
@@ -22,6 +21,7 @@ from dbvisual.app.sheet_service import (
 )
 from dbvisual.core.compiler import compile_select
 from dbvisual.core.queryspec import QuerySpec
+from dbvisual.core.readonly import ensure_readonly, readonly_result
 
 __all__ = [
     "FilterCondition",
@@ -45,15 +45,6 @@ __all__ = [
 
 Agg = Literal["sum", "avg", "count", "min", "max"]
 GroupSort = Literal["caption", "total"]
-
-# Leading keywords allowed for custom report SQL (read-only).
-_READONLY_START = re.compile(r"^\s*(select|with)\b", re.IGNORECASE)
-# Statement-starting keywords that indicate a write / DDL.
-_WRITE = re.compile(
-    r"\b(insert|update|delete|drop|alter|create|truncate|grant|revoke|"
-    r"merge|replace|call|do)\b",
-    re.IGNORECASE,
-)
 
 
 class ReportParam(BaseModel):
@@ -110,24 +101,11 @@ class ReportSpec(BaseModel):
 # -- read-only custom SQL ---------------------------------------------------
 
 
-def ensure_readonly(sql: str) -> None:
-    """Raise ``ValueError`` if ``sql`` is not a single read-only statement."""
-    stripped = sql.strip().rstrip(";")
-    if ";" in stripped:
-        raise ValueError("Only a single SELECT statement is allowed.")
-    if not _READONLY_START.match(stripped):
-        raise ValueError("The report query must start with SELECT or WITH.")
-    if _WRITE.search(stripped):
-        raise ValueError("The report query cannot contain write statements.")
-
-
 def run_custom_sql(
     engine: Engine, sql: str, params: dict[str, Any] | None = None
 ) -> tuple[list[str], list[dict[str, Any]]]:
     """Execute a read-only custom SQL string with bound parameters."""
-    ensure_readonly(sql)
-    with engine.connect() as conn:
-        result = conn.execute(text(sql), params or {})
+    with readonly_result(engine, sql, params) as result:
         fields = list(result.keys())
         rows = [dict(r) for r in result.mappings()]
     return fields, rows
@@ -175,8 +153,7 @@ def resolve_param_options(
     av = param.available
     if param.depends_on and av.source == "query" and av.query:
         parent = (parent_values or {}).get(param.depends_on)
-        with engine.connect() as conn:
-            result = conn.execute(text(av.query), {param.depends_on: parent})
+        with readonly_result(engine, av.query, {param.depends_on: parent}) as result:
             return [
                 {"value": r[0], "label": str(r[1] if len(r) > 1 else r[0])}
                 for r in result
@@ -199,12 +176,12 @@ def _match_condition(cond: FilterCondition, row: dict[str, Any]) -> bool:
         return actual in values
     if op == "contains":
         return actual is not None and str(cond.value).lower() in str(actual).lower()
-    if actual is None or cond.value is None:
-        return op == "ne" and actual != cond.value
     if op == "eq":
         return actual == cond.value
     if op == "ne":
         return actual != cond.value
+    if actual is None or cond.value is None:
+        return False
     if op == "lt":
         return actual < cond.value
     if op == "le":
@@ -314,7 +291,7 @@ def aggregate_summary(
             if cat not in buckets:
                 continue
             num = _to_num(r.get(value))
-            if num is not None or agg == "count":
+            if num is not None or (agg == "count" and r.get(value) is not None):
                 buckets[cat].append(num if num is not None else 0.0)
         matrix[sname] = {c: _aggregate(v, agg) for c, v in buckets.items()}
 

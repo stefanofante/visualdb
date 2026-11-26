@@ -10,12 +10,13 @@ restrictive permissions.
 from __future__ import annotations
 
 import json
-import os
-import stat
 from pathlib import Path
 
 from cryptography.fernet import Fernet
+from filelock import FileLock
 from platformdirs import user_data_dir
+
+from dbvisual.meta.local_files import atomic_write
 
 _APP_NAME = "dbvisual"
 _KEYRING_SERVICE = "dbvisual"
@@ -43,6 +44,7 @@ class SecretStore:
         self._use_keyring = use_keyring
         self._dir = Path(data_dir) if data_dir is not None else _data_dir()
         self._dir.mkdir(parents=True, exist_ok=True)
+        self._lock = FileLock(self._dir / "vault.lock", timeout=10)
         self._key_path = self._dir / "secret.key"
         self._vault_path = self._dir / "secrets.enc"
 
@@ -69,9 +71,10 @@ class SecretStore:
 
             keyring.set_password(_KEYRING_SERVICE, key, value)
             return
-        vault = self._load_vault()
-        vault[key] = value
-        self._write_vault(vault)
+        with self._lock:
+            vault = self._load_vault()
+            vault[key] = value
+            self._write_vault(vault)
 
     def get_secret(self, key: str) -> str | None:
         """Return the secret stored under ``key`` or ``None``."""
@@ -79,7 +82,8 @@ class SecretStore:
             import keyring
 
             return keyring.get_password(_KEYRING_SERVICE, key)
-        return self._load_vault().get(key)
+        with self._lock:
+            return self._load_vault().get(key)
 
     def delete_secret(self, key: str) -> None:
         """Remove the secret under ``key`` (no-op if absent)."""
@@ -92,10 +96,11 @@ class SecretStore:
             except keyring.errors.PasswordDeleteError:
                 pass
             return
-        vault = self._load_vault()
-        if key in vault:
-            del vault[key]
-            self._write_vault(vault)
+        with self._lock:
+            vault = self._load_vault()
+            if key in vault:
+                del vault[key]
+                self._write_vault(vault)
 
     # -- keyring detection --------------------------------------------------
 
@@ -119,8 +124,7 @@ class SecretStore:
         if self._key_path.exists():
             return self._key_path.read_bytes()
         key = Fernet.generate_key()
-        self._key_path.write_bytes(key)
-        self._restrict(self._key_path)
+        atomic_write(self._key_path, key)
         return key
 
     def _fernet(self) -> Fernet:
@@ -131,22 +135,12 @@ class SecretStore:
         if not self._vault_path.exists():
             return {}
         token = self._vault_path.read_bytes()
-        if not token:
-            return {}
+        if not token or not self._key_path.exists():
+            raise ValueError("The encrypted vault or its key is incomplete.")
         data = self._fernet().decrypt(token)
         return json.loads(data.decode("utf-8"))
 
     def _write_vault(self, vault: dict[str, str]) -> None:
         """Encrypt and persist the fallback vault with restrictive permissions."""
         token = self._fernet().encrypt(json.dumps(vault).encode("utf-8"))
-        self._vault_path.write_bytes(token)
-        self._restrict(self._vault_path)
-
-    @staticmethod
-    def _restrict(path: Path) -> None:
-        """Best-effort tighten file permissions to owner read/write only."""
-        try:
-            os.chmod(path, stat.S_IRUSR | stat.S_IWUSR)
-        except OSError:
-            # Non-POSIX filesystems (e.g. some Windows setups) may reject chmod.
-            pass
+        atomic_write(self._vault_path, token)
