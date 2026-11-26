@@ -51,7 +51,8 @@ Use that entry as the GitHub release notes. Published changelogs contain version
 - Reflect DuckDB tables and ordered keys using its native catalog. Detect
   stale DuckDB writes from the rows actually affected. Reopen saved encrypted
   database connections with their stored key and refresh cached connections
-  when their target or credentials change.
+  when their target or credentials change. The DuckDB extra requires 1.5.3 or
+  newer for the tested reflection, CRUD and encrypted-file paths.
 - Accept manually assigned record keys on insert and keep saved keys immutable.
   Save date and time inputs using the reflected database type and preserve
   generated DuckDB keys and defaults.
