@@ -77,6 +77,11 @@ class SheetView:
     main_table: str
     columns: list[SheetColumn] = field(default_factory=list)
     pk_fields: list[str] = field(default_factory=list)
+    assigned_keys: set[str] = field(default_factory=set)
+
+    def writable_fields(self, inserting: bool = False) -> set[str]:
+        fields = self.editable_fields
+        return fields | self.assigned_keys if inserting else fields
 
     @property
     def field_to_column(self) -> dict[str, str]:
@@ -163,7 +168,9 @@ def build_view(spec: QuerySpec, metadata: MetaData) -> SheetView:
     Main-table columns are editable except primary-key columns (needed to locate
     rows but never edited). Columns coming from related tables are read-only.
     """
+    table = get_table(metadata, spec.main_table)
     pk_cols = set(get_primary_key(metadata, spec.main_table))
+    assigned_keys = set()
     columns: list[SheetColumn] = []
     pk_fields: list[str] = []
     for col in spec.columns:
@@ -181,7 +188,19 @@ def build_view(spec: QuerySpec, metadata: MetaData) -> SheetView:
         )
         if is_pk:
             pk_fields.append(field_key)
-    return SheetView(main_table=spec.main_table, columns=columns, pk_fields=pk_fields)
+            key = table.c[col.name]
+            if (
+                key is not table.autoincrement_column
+                and key.default is None
+                and key.server_default is None
+            ):
+                assigned_keys.add(field_key)
+    return SheetView(
+        main_table=spec.main_table,
+        columns=columns,
+        pk_fields=pk_fields,
+        assigned_keys=assigned_keys,
+    )
 
 
 def load_rows(
@@ -222,8 +241,10 @@ def build_operations(
     def pk_of(row: dict[str, Any]) -> dict[str, Any]:
         return {field_to_col[f]: row[f] for f in pk_fields}
 
-    def values_of(row: dict[str, Any]) -> dict[str, Any]:
-        return {field_to_col[f]: row[f] for f in editable if f in row}
+    def values_of(row: dict[str, Any], inserting=False) -> dict[str, Any]:
+        return {
+            field_to_col[f]: row[f] for f in view.writable_fields(inserting) if f in row
+        }
 
     if update_originals is not None and len(update_originals) != len(updates):
         raise ValueError("Each updated row requires its original values.")
@@ -260,7 +281,9 @@ def build_operations(
             )
         )
     for row in inserts:
-        ops.append(Operation(kind="insert", table=table, values=values_of(row)))
+        ops.append(
+            Operation(kind="insert", table=table, values=values_of(row, inserting=True))
+        )
     return ops
 
 

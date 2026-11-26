@@ -11,6 +11,8 @@ feature, so a reliable TSV copy button and a paste dialog are provided instead.
 
 from __future__ import annotations
 
+import csv
+import io
 import json
 from typing import Any
 
@@ -164,6 +166,9 @@ class SheetGrid:
                     "cellClassRules": class_rules,
                 }
             )
+            if col.field in self.view.assigned_keys and not is_formula:
+                defs[-1].pop("editable")
+                defs[-1][":editable"] = "p => p.data?.__newRow === true"
         return defs
 
     def _build(self) -> None:
@@ -248,7 +253,7 @@ class SheetGrid:
         field = event.args.get("colId")
         if (
             row is None
-            or field not in self.view.editable_fields
+            or field not in self.view.writable_fields(rid not in self._existing_ids)
             or field in self.formulas
             or field in self.attachment_fields
         ):
@@ -265,6 +270,7 @@ class SheetGrid:
         """Append a blank editable row (persisted as an insert on save)."""
         row: dict[str, Any] = {c.field: None for c in self.view.columns}
         self._prepare(row)
+        row["__newRow"] = True
         self.rows.append(row)
         self._by_id[row["__id__"]] = row
         self._recompute_totals()
@@ -473,31 +479,36 @@ class SheetGrid:
     def to_tsv(self) -> str:
         """Serialize the visible columns and rows as tab-separated values."""
         fields = self._visible_fields()
-        headers = [c.header for c in self.view.columns]
-        lines = ["\t".join(headers)]
-        for row in self.rows:
-            lines.append(
-                "\t".join("" if row.get(f) is None else str(row.get(f)) for f in fields)
-            )
-        return "\n".join(lines)
+        stream = io.StringIO(newline="")
+        writer = csv.writer(stream, dialect="excel-tab")
+        writer.writerow(c.header for c in self.view.columns)
+        writer.writerows([row.get(f) for f in fields] for row in self.rows)
+        return stream.getvalue()
 
     def import_tsv(self, text: str, has_header: bool = True) -> int:
-        """Append rows parsed from ``text`` (TSV). Returns the number added.
-
-        Values map onto the editable fields, in column order. Non-editable
-        (lookup/PK) columns are left empty so they are never written on save.
-        """
-        editable = [c.field for c in self.view.columns if c.editable]
-        lines = [ln for ln in text.replace("\r\n", "\n").split("\n") if ln.strip()]
-        if has_header and lines:
-            lines = lines[1:]
+        """Map labelled columns by name so skipped keys never shift cell values."""
+        writable = (
+            self.view.writable_fields(True)
+            - set(self.attachment_fields)
+            - self.formulas.keys()
+        )
+        editable = [col.field for col in self.view.columns if col.field in writable]
+        records = csv.reader(io.StringIO(text, newline=""), dialect="excel-tab")
+        if has_header:
+            headers = next(records, [])
+            known = {col.header: col.field for col in self.view.columns}
+            if any(h in known for h in headers):
+                editable = [known.get(h) for h in headers]
         added = 0
-        for line in lines:
-            cells = line.split("\t")
+        for cells in records:
+            if not cells:
+                continue
             row: dict[str, Any] = {c.field: None for c in self.view.columns}
             for field, value in zip(editable, cells):
-                row[field] = value
+                if field in writable:
+                    row[field] = value
             self._prepare(row)
+            row["__newRow"] = True
             self.rows.append(row)
             self._by_id[row["__id__"]] = row
             added += 1

@@ -70,11 +70,11 @@ def save_reviewed(
     view: SheetView,
     draft: AttachmentDraft | None,
     fields: list[str],
-) -> None:
+) -> bool:
     """Commit exactly the reviewed rows and files, including a reconciled retry."""
     if draft is None or not fields:
         apply_batch(engine, ops)
-        return
+        return True
     mapping = view.field_to_column
     names = [mapping[field] for field in fields if field in view.editable_fields]
 
@@ -100,10 +100,17 @@ def save_reviewed(
         draft.finish(False)
         raise
     draft.finish(True)
+    cleaned = True
     for op in ops:
         if op.kind != "insert":
             old = op.expected or {}
             new = {} if op.kind == "delete" else {**old, **(op.values or {})}
-            draft.discard_removed(
-                key_for(op), [old.get(n) for n in names], [new.get(n) for n in names]
-            )
+            try:
+                draft.discard_removed(
+                    key_for(op),
+                    [old.get(n) for n in names],
+                    [new.get(n) for n in names],
+                )
+            except OSError:
+                cleaned = False
+    return cleaned

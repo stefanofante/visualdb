@@ -155,9 +155,11 @@ class SavePlan:
     master_is_new: bool
 
 
-def _editable_values(view: SheetView, record: dict[str, Any]) -> dict[str, Any]:
+def _editable_values(
+    view: SheetView, record: dict[str, Any], inserting=False
+) -> dict[str, Any]:
     f2c = view.field_to_column
-    return {f2c[f]: record[f] for f in view.editable_fields if f in record}
+    return {f2c[f]: record[f] for f in view.writable_fields(inserting) if f in record}
 
 
 def _pk_values(view: SheetView, record: dict[str, Any]) -> dict[str, Any]:
@@ -185,7 +187,7 @@ def build_save_plan(
         master_op = Operation(
             kind="insert",
             table=master_table,
-            values=_editable_values(master_view, master_record),
+            values=_editable_values(master_view, master_record, inserting=True),
         )
     else:
         expected: dict[str, Any] | None = None

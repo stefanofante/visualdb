@@ -55,3 +55,14 @@ written under `dist/`.
 6. Install the next build over the existing installation and confirm that saved
    connections, secrets, definitions and attachments remain available in the
    per-user data directory shown in Settings.
+
+## Publish a tagged release
+
+Replace the working changelog heading with the version and release date, include
+the actual changes and set the same version in `pyproject.toml`. Commit these
+files on master **before** tagging. Wait for both Desktop candidates jobs on that
+commit. In **Actions → Publish desktop release**, select master and enter the
+tag. The release job checks the package version, the dated changelog heading,
+the absence of Unreleased entries, and both native artifacts for that commit.
+Only then does it create the tag and publish those installers and notes. A tag
+ending in `-rc.N` produces a GitHub prerelease.

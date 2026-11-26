@@ -1,0 +1,42 @@
+name: Publish desktop release
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Versioned changelog tag, for example v1.2.0.0
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v5
+      - name: Check changelog before tagging
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: python3 scripts/release_notes.py "$RELEASE_TAG" "$RUNNER_TEMP/release-notes.md"
+      - name: Get successful native builds for the same commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          run_id="$(gh run list --workflow desktop.yml --commit "$GITHUB_SHA" --status success --json databaseId --jq '.[0].databaseId // empty')"
+          test -n "$run_id" || { echo 'No successful desktop build for this commit.'; exit 1; }
+          gh run download "$run_id" --dir "$RUNNER_TEMP/installers"
+          test -s "$RUNNER_TEMP/installers/DBVisual-Windows-x64-Setup.exe/DBVisual-Windows-x64-Setup.exe"
+          test -s "$RUNNER_TEMP/installers/DBVisual-macOS-arm64.dmg/DBVisual-macOS-arm64.dmg"
+      - name: Publish tag, notes and installers
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          flags=()
+          if [[ "$RELEASE_TAG" == *-rc.* ]]; then flags+=(--prerelease); fi
+          gh release create "$RELEASE_TAG" --target "$GITHUB_SHA" --title "DBVisual $RELEASE_TAG" --notes-file "$RUNNER_TEMP/release-notes.md" "${flags[@]}" "$RUNNER_TEMP"/installers/*/*

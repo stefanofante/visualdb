@@ -235,9 +235,15 @@ def resolve_available_values(
 # -- persistence ------------------------------------------------------------
 
 
-def _editable_values(view: SheetView, record: dict[str, Any]) -> dict[str, Any]:
+def _editable_values(
+    view: SheetView, record: dict[str, Any], inserting=False
+) -> dict[str, Any]:
     field_to_col = view.field_to_column
-    return {field_to_col[f]: record[f] for f in view.editable_fields if f in record}
+    return {
+        field_to_col[f]: record[f]
+        for f in view.writable_fields(inserting)
+        if f in record
+    }
 
 
 def _pk_values(view: SheetView, record: dict[str, Any]) -> dict[str, Any]:
@@ -261,7 +267,7 @@ def save_record(
     change raises :class:`ConflictError` and writes nothing. Related lookup
     columns are never written.
     """
-    values = _editable_values(view, record)
+    values = _editable_values(view, record, inserting=is_new)
     if is_new:
         return insert_record(engine, table, values, before_commit=before_commit)
     pk = _pk_values(view, original if original is not None else record)

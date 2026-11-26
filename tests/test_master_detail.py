@@ -324,7 +324,6 @@ def test_many_to_many_association(m2m: tuple[Engine, MetaData]) -> None:
         ],
         params=[Param(name="master", type="integer")],
     )
-    detail = DetailQuery(spec=detail_spec, param_name="master", fk_column="student_id")
     dview = build_view(detail_spec, metadata)
     dtable = get_table(metadata, "student_course")
 

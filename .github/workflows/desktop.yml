@@ -8,6 +8,7 @@ on:
       - 'tests/**'
       - 'scripts/**'
       - 'packaging/**'
+      - 'CHANGELOG.md'
       - 'main.py'
       - 'pyproject.toml'
       - '.github/workflows/desktop.yml'

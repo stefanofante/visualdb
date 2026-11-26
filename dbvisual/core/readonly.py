@@ -33,6 +33,12 @@ def readonly_result(engine: Engine, sql: str, params: dict[str, Any] | None = No
         if sqlite:
             prior = conn.exec_driver_sql("PRAGMA query_only").scalar_one()
             conn.exec_driver_sql("PRAGMA query_only = ON")
+        elif dialect == "duckdb":
+            # duckdb-engine starts an ordinary native transaction on autobegin.
+            # This private checkout has no work yet. Replace its transaction mode.
+            conn.begin()
+            conn.exec_driver_sql("ROLLBACK")
+            conn.exec_driver_sql("BEGIN TRANSACTION READ ONLY")
         elif dialect in {"postgresql", "oracle"}:
             conn.exec_driver_sql("SET TRANSACTION READ ONLY")
         elif dialect in {"mysql", "mariadb"}:

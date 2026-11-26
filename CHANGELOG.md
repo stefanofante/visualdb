@@ -22,14 +22,16 @@ Use that entry as the GitHub release notes. Published changelogs contain version
   The navigation drawer now opens on demand in a narrow desktop window.
 - Added the local REST API for exporting and managing application definitions.
   Tokens are scoped to one application. Updates and deletes require an ETag.
-  [REST API reference](docs/rest-api.md)
+  See the REST API reference in the repository.
+- Added a publishing workflow that checks the dated changelog and the installer
+  builds for the exact commit before creating its tag and GitHub release.
 
 ### Security and data integrity
 
 - Dispatch post-commit webhooks only for the originating definition. Two sheets
   connected to identically named tables can now have independent recipients.
 - Apply the same single-query validation to reports, AI query previews and
-  lookup lists. Use database read-only transactions on PostgreSQL, MySQL and
+  lookup lists. Use database read-only transactions on PostgreSQL, MySQL, DuckDB and
   Oracle and restore SQLite's read-only setting before returning a connection.
 - Limit the local web UI to loopback. Require a local identity when opening an
   RLS-enabled PostgreSQL sheet or form. Pass the identity as a bound value.
@@ -50,11 +52,16 @@ Use that entry as the GitHub release notes. Published changelogs contain version
   stale DuckDB writes from the rows actually affected. Reopen saved encrypted
   database connections with their stored key and refresh cached connections
   when their target or credentials change.
+- Accept manually assigned record keys on insert and keep saved keys immutable.
+  Save date and time inputs using the reflected database type and preserve
+  generated DuckDB keys and defaults.
 - Preserve rows with empty lookups and use every component of a composite
   foreign key when joining a related table.
 - Quote schema identifiers using the target dialect, validate CSV headers and
   record lengths, preserve leading zeroes and roll back a failed SQLite table
   import including creation of the table.
+- Paste labelled spreadsheet columns by name, preserving quoted tabs and newlines
+  and keeping generated keys and lookup columns out of the insert.
 - Preserve text as literal text in Excel snapshots and keep successive exports
   with the same title. Fix NULL counts and formula short-circuit evaluation.
 - Honour the saved launch mode from both entry points and send Gemini API

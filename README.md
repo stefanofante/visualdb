@@ -37,9 +37,10 @@ Choose your operating system. The packages include Python and the application.
 | Windows 10 or 11, x64 | **DBVisual-Windows-x64-Setup.exe** | Double-click the installer, then open **DBVisual** from the Start menu. It installs for your Windows user and supplies the WebView2 runtime offline. |
 | macOS, Apple Silicon (M-series) | **DBVisual-macOS-arm64.dmg** | Open the disk image, drag **DBVisual** to **Applications**, then open it from there. |
 
-Use the assets attached to the [GitHub release](https://github.com/stefanofante/visualdb/releases).
-For builds under test, open a successful [Desktop candidates run](https://github.com/stefanofante/visualdb/actions/workflows/desktop.yml)
-and extract the downloaded artifact ZIP. Candidate installers have no publisher
+For a tagged desktop release, use its assets on the [Releases page](https://github.com/stefanofante/visualdb/releases).
+The 1.0 and 1.1 tags contain source archives. To test 1.2 before its installer release,
+sign in to GitHub, open the latest successful [Desktop candidates run on master](https://github.com/stefanofante/visualdb/actions/workflows/desktop.yml?query=branch%3Amaster),
+select the artifact named for your operating system, and extract its ZIP. Candidate installers have no publisher
 signature or Apple notarization. Keep an existing installation's user-data
 directory when upgrading. Its location appears in **Settings**.
 
@@ -84,7 +85,7 @@ python -m venv .venv
 pip install -e ".[dev]"
 ```
 
-Database drivers are **optional** and installed only for the DB you need:
+For source installations, add the drivers required by your database:
 
 ```powershell
 pip install -e ".[postgresql]"      # or mysql / mssql / oracle / duckdb

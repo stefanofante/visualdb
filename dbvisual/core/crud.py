@@ -10,9 +10,21 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import date, datetime, time
 from typing import Any, Literal
 
-from sqlalchemy import Connection, Engine, Table, and_, delete, insert, update
+from sqlalchemy import (
+    Connection,
+    Date,
+    DateTime,
+    Engine,
+    Table,
+    Time,
+    and_,
+    delete,
+    insert,
+    update,
+)
 
 from dbvisual.core.events import CrudEvent, emit
 
@@ -47,6 +59,20 @@ class Operation:
     expected: dict[str, Any] | None = None
 
 
+def _typed_values(table: Table, values: dict[str, Any]):
+    """Native date/time bind processors expect Python objects from browser text."""
+    result = dict(values)
+    for key, value in values.items():
+        if not isinstance(value, str):
+            continue
+        kind = table.c[key].type
+        for sql_type, convert in ((DateTime, datetime), (Date, date), (Time, time)):
+            if isinstance(kind, sql_type):
+                result[key] = convert.fromisoformat(value) if value else None
+                break
+    return result
+
+
 def _pk_where(table: Table, pk_values: dict[str, Any]):
     """Build a WHERE clause matching ``pk_values`` on ``table``."""
     if not pk_values:
@@ -56,12 +82,23 @@ def _pk_where(table: Table, pk_values: dict[str, Any]):
         or None in pk_values.values()
     ):
         raise ValueError("A complete primary key is required for a record write.")
-    return and_(*(table.c[col] == val for col, val in pk_values.items()))
+    return and_(
+        *(table.c[col] == val for col, val in _typed_values(table, pk_values).items())
+    )
 
 
 def _exec_insert(conn: Connection, table: Table, values: dict[str, Any]) -> Any:
     """Insert ``values`` into ``table``; return the primary key when available."""
-    result = conn.execute(insert(table).values(**values))
+    fields = {
+        k: v
+        for k, v in _typed_values(table, values).items()
+        if v is not None
+        or (table.c[k].default is None and table.c[k].server_default is None)
+    }
+    stmt = insert(table).values(**fields)
+    if conn.dialect.name == "duckdb" and len(table.primary_key):
+        return conn.execute(stmt.returning(*table.primary_key)).one()
+    result = conn.execute(stmt)
     try:
         return result.inserted_primary_key
     except Exception:  # pragma: no cover - driver dependent
@@ -82,8 +119,15 @@ def _exec_update(
     """
     conditions = [_pk_where(table, pk_values)]
     if expected:
-        conditions.append(and_(*(table.c[col] == val for col, val in expected.items())))
-    stmt = update(table).where(and_(*conditions)).values(**values)
+        conditions.append(
+            and_(
+                *(
+                    table.c[col] == val
+                    for col, val in _typed_values(table, expected).items()
+                )
+            )
+        )
+    stmt = update(table).where(and_(*conditions)).values(**_typed_values(table, values))
     if conn.dialect.name == "duckdb":
         return len(conn.execute(stmt.returning(*table.primary_key)).all())
     result = conn.execute(stmt)
@@ -95,7 +139,7 @@ def _exec_delete(
 ) -> int:
     """Delete the row identified by ``pk_values``; return affected row count."""
     stmt = delete(table).where(_pk_where(table, pk_values))
-    for name, value in (expected or {}).items():
+    for name, value in _typed_values(table, expected or {}).items():
         stmt = stmt.where(table.c[name] == value)
     if conn.dialect.name == "duckdb":
         return len(conn.execute(stmt.returning(*table.primary_key)).all())

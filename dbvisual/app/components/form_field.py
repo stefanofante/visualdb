@@ -8,6 +8,7 @@ an attachment field type backed by :class:`AttachmentStore`.
 
 from __future__ import annotations
 
+from datetime import date, time
 from typing import Any, Callable
 
 from nicegui import ui
@@ -171,7 +172,9 @@ class FormField:
             self._att_value = new or ""
             self._render_attachments()
         elif self._widget is not None:
-            self._widget.value = new
+            self._widget.value = (
+                new.isoformat() if isinstance(new, (date, time)) else new
+            )
 
     def _changed(self) -> None:
         self.validate()

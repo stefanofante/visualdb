@@ -145,3 +145,82 @@ def test_form_layout_legacy_and_round_trip():
     ]
     restored = FormSpec.from_json(form.to_json())
     assert [[f.width for f in row] for row in layout_rows(restored.fields)] == [[8, 4]]
+
+
+def test_manual_key_and_typed_dates(engine):
+    from datetime import date
+
+    from sqlalchemy import Date
+
+    from dbvisual.app.sheet_service import apply_batch
+
+    md = MetaData()
+    table = Table(
+        "ledger", md, Column("code", String, primary_key=True), Column("day", Date)
+    )
+    md.create_all(engine)
+    view = build_view(build_queryspec(md, "ledger", ["day"], []), md)
+    assert "code" in view.writable_fields(True) and "code" not in view.writable_fields()
+    apply_batch(
+        engine,
+        build_operations(
+            view,
+            table,
+            inserts=[{"code": "INV-1", "day": "2026-11-26"}],
+            deletes=[],
+            updates=[],
+        ),
+    )
+    with engine.connect() as conn:
+        assert conn.execute(select(table)).one() == ("INV-1", date(2026, 11, 26))
+
+
+def test_duckdb_generated_key_and_readonly_scope(tmp_path):
+    from dbvisual.core.connections import ConnectionConfig, build_engine
+    from dbvisual.core.crud import insert_record
+    from dbvisual.core.introspect import reflect_schema
+    from dbvisual.core.readonly import readonly_result
+
+    engine = build_engine(
+        ConnectionConfig(dialect="duckdb", database=str(tmp_path / "test.duckdb"))
+    )
+    try:
+        with engine.begin() as conn:
+            conn.exec_driver_sql("CREATE SEQUENCE item_seq")
+            conn.exec_driver_sql(
+                "CREATE TABLE items (id INTEGER PRIMARY KEY DEFAULT nextval('item_seq'), day DATE)"
+            )
+        md = reflect_schema(engine)
+        view = build_view(build_queryspec(md, "items", ["day"], []), md)
+        assert not view.assigned_keys
+        key = insert_record(engine, md.tables["items"], {"day": "2026-11-26"})
+        assert key._mapping["id"] == 1
+        with readonly_result(
+            engine, "SELECT id FROM items WHERE id=:n", {"n": 1}
+        ) as result:
+            assert result.scalar_one() == 1
+        assert insert_record(engine, md.tables["items"], {"day": None})[0] == 2
+    finally:
+        engine.dispose()
+
+
+def test_tsv_round_trip_keeps_readonly_columns_in_place(metadata):
+    from unittest.mock import Mock
+
+    from dbvisual.app.components.grid import SheetGrid
+
+    spec = build_queryspec(metadata, "customers", ["name", "city"], [])
+    view = build_view(spec, metadata)
+    grid = SheetGrid.__new__(SheetGrid)
+    grid.view, grid.rows = view, [{"id": 1, "name": "A\tB", "city": "Two\nlines"}]
+    (
+        grid._id_seq,
+        grid._by_id,
+        grid.grid,
+        grid.totals,
+        grid.formulas,
+        grid.attachment_fields,
+    ) = 0, {}, Mock(), {}, {}, []
+    assert grid.import_tsv(grid.to_tsv()) == 1
+    assert grid.rows[-1]["name"] == "A\tB" and grid.rows[-1]["city"] == "Two\nlines"
+    assert grid.rows[-1]["id"] is None

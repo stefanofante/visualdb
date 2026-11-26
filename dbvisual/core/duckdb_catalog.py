@@ -28,7 +28,7 @@ def reflect_duckdb(engine, schema):
     scope = "database_name = current_database() AND schema_name = coalesce(:schema, current_schema())"
     columns = text("""
         SELECT c.table_name, c.column_name, c.data_type, c.is_nullable,
-               c.numeric_precision, c.numeric_scale
+               c.numeric_precision, c.numeric_scale, c.column_default
         FROM duckdb_columns() AS c JOIN duckdb_tables() AS t USING (database_oid, schema_oid, table_oid)
         WHERE c.database_name = current_database()
           AND c.schema_name = coalesce(:schema, current_schema()) AND NOT t.internal
@@ -36,7 +36,7 @@ def reflect_duckdb(engine, schema):
     """)
     with engine.connect() as conn:
         tables = {}
-        for name, field, dtype, nullable, precision, scale in conn.execute(
+        for name, field, dtype, nullable, precision, scale, default in conn.execute(
             columns, {"schema": schema}
         ):
             if name not in tables:
@@ -46,7 +46,15 @@ def reflect_duckdb(engine, schema):
                 sa_type = Numeric(precision, scale)
             else:
                 sa_type = cls() if cls else DuckType(dtype)
-            tables[name].append_column(Column(field, sa_type, nullable=nullable))
+            tables[name].append_column(
+                Column(
+                    field,
+                    sa_type,
+                    nullable=nullable,
+                    autoincrement=False,
+                    server_default=text(default) if default is not None else None,
+                )
+            )
         keys = text(f"""
             SELECT table_name, constraint_type, constraint_column_names, referenced_table, referenced_column_names
             FROM duckdb_constraints() WHERE {scope} AND constraint_type IN ('PRIMARY KEY', 'FOREIGN KEY')

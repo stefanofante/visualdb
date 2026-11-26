@@ -279,7 +279,7 @@ def master_detail_editor(definition_id: int) -> None:
                     fc = FieldConfig(field=c.field, label=c.header)
                     fw = FormField(
                         fc,
-                        editable=c.field in master_view.editable_fields,
+                        editable=c.field in master_view.writable_fields(st["is_new"]),
                         col_type=master_types.get(c.field, ""),
                     )
                     fw.value = record.get(c.field)

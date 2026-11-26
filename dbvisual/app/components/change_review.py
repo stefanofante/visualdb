@@ -47,7 +47,11 @@ async def review_changes(engine, operations, commit):
     pending = list(operations)
     while pending:
         try:
-            commit(pending)
+            if not commit(pending):
+                ui.notify(
+                    "Rows saved. Some unreferenced attachment files could not be removed.",
+                    type="warning",
+                )
             return True
         except ConflictError:
             conflicts = read_conflicts(engine, pending)

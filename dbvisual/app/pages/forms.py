@@ -322,7 +322,7 @@ def form_editor(definition_id: int) -> None:
                 for group in layout_rows(form_spec.fields):
                     with ui.element("div").classes("dbv-form-row"):
                         for fc in group:
-                            editable = fc.field in view.editable_fields
+                            editable = fc.field in view.writable_fields(st["is_new"])
                             options = _options_for(
                                 engine, metadata, form_spec, fc, view
                             )
