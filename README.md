@@ -294,7 +294,8 @@ with **optimistic locking** (`insert_record` / `update_record` / `delete_record`
 
 The [desktop build instructions](docs/packaging.md) cover the Windows x64 installer
 and the macOS Apple Silicon disk image. Both package Python with the application.
-Candidate builds and their test results are available from the
+Pushes to `master` run source tests for code and workflow changes. To build the
+installers, push the commit to `release` or select `release` when running the
 [Desktop candidates workflow](https://github.com/stefanofante/visualdb/actions/workflows/desktop.yml).
 
 ---

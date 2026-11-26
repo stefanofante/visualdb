@@ -17,7 +17,7 @@ permissions:
 
 jobs:
   publish:
-    if: github.ref == 'refs/heads/master'
+    if: github.ref == 'refs/heads/release'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -45,7 +45,7 @@ jobs:
           if [[ "$FROM_BUILD" == true ]]; then
             run_id="$GITHUB_RUN_ID"
           else
-            run_id="$(gh run list --workflow desktop.yml --commit "$GITHUB_SHA" --status success --json databaseId --jq '.[0].databaseId // empty')"
+            run_id="$(gh run list --workflow desktop.yml --branch release --commit "$GITHUB_SHA" --status success --json databaseId --jq '.[0].databaseId // empty')"
           fi
           test -n "$run_id" || { echo 'No successful desktop build for this commit.'; exit 1; }
           gh run download "$run_id" --dir "$RUNNER_TEMP/installers"

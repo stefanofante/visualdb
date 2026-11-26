@@ -8,8 +8,10 @@ optional and is not bundled by the standard builds.
 
 ## Building a candidate
 
-On GitHub, run **Desktop candidates** under **Actions**. It also runs when code,
-packaging scripts or tests change on master. The Windows and Mac runners execute
+Push the commit to the `release` branch to build both installers. To rebuild the
+current release branch manually, select **Actions → Desktop candidates → Run workflow**
+and choose `release`. Development pushes to `master` run source tests for code,
+packaging and workflow changes. The Windows and Mac packaging runners execute
 the source suite, build a native application and start the frozen binary in
 loopback web mode to check its UI routes. Download the two workflow artifacts
 for the commit under test and extract the GitHub ZIP wrappers.
@@ -58,12 +60,12 @@ written under `dist/`.
 
 ## Publish a tagged release
 
-Replace the working changelog heading with the version and release date, include
-the actual changes and set the same version in `pyproject.toml`. Commit these
-files on master **before** tagging. Give the release commit the subject
-`Release v1.2.0.0` (substitute the actual tag). After both native jobs succeed,
+Set the new version in `pyproject.toml` and enter its date and changes in
+`CHANGELOG.md`. Give the commit the subject `Release vX.Y.Z.W`, substituting
+the actual version. From that commit on `master`, run `git push origin HEAD:release`
+to promote it. After both native jobs succeed,
 the publishing job checks the dated changelog, the package version and the two
 artifacts from that run. It creates the public GitHub release and tag at the
 same commit and attaches the installers. A tag ending in `-rc.N` produces a
-prerelease. To publish an existing successful build of master manually, use
-**Actions → Publish desktop release** and supply its tag.
+prerelease. To publish an existing successful build of `release` manually, select
+**Actions → Publish desktop release → Run workflow**, choose `release` and enter its tag.

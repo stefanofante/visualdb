@@ -1,0 +1,36 @@
+name: Source tests
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'dbvisual/**'
+      - 'tests/**'
+      - 'scripts/**'
+      - 'packaging/**'
+      - 'CHANGELOG.md'
+      - 'main.py'
+      - 'pyproject.toml'
+      - '.github/workflows/*.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, macos-15]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Install the native ODBC driver manager
+        if: runner.os == 'macOS'
+        run: brew install unixodbc
+      - name: Install test dependencies
+        run: python -m pip install ".[dev,all-drivers]"
+      - name: Test source
+        run: python -m pytest -q -rs

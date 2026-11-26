@@ -2,22 +2,14 @@ name: Desktop candidates
 on:
   workflow_dispatch:
   push:
-    branches: [master]
-    paths:
-      - 'dbvisual/**'
-      - 'tests/**'
-      - 'scripts/**'
-      - 'packaging/**'
-      - 'CHANGELOG.md'
-      - 'main.py'
-      - 'pyproject.toml'
-      - '.github/workflows/desktop.yml'
+    branches: [release]
 
 permissions:
   contents: read
 
 jobs:
   desktop:
+    if: github.ref == 'refs/heads/release'
     strategy:
       fail-fast: false
       matrix:
@@ -66,7 +58,7 @@ jobs:
           if-no-files-found: error
 
   publish:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master' && startsWith(github.event.head_commit.message, 'Release v')
+    if: github.event_name == 'push' && github.ref == 'refs/heads/release' && startsWith(github.event.head_commit.message, 'Release v')
     needs: desktop
     permissions:
       actions: read
