@@ -1,8 +1,7 @@
 # Changelog
 
-Record user-visible changes under **Unreleased** as they land. When tagging a
-release, move those entries under its version and date and start a fresh
-Unreleased section. Dates refer to releases of this repository.
+Before creating a tag, give its changes their published version and release date.
+Use that entry as the GitHub release notes. Published changelogs contain versioned entries only.
 
 ## [Unreleased]
 
@@ -12,6 +11,15 @@ Unreleased section. Dates refer to releases of this repository.
   Apple Silicon disk image. Both include the Python runtime. The Windows installer
   includes the offline WebView2 runtime.
 - Read the version shown in About from the package metadata.
+- Preview pending inserts, updates and deletes in sheets and forms. Resolve a
+  concurrent edit against the original, local and current value of each field.
+  Retrying checks the displayed database version again and keeps unrelated edits.
+- Configure typed, optional or required query filters on saved forms and sheets.
+  Fetch a bounded page ordered by the complete primary key. The page selector
+  identifies the scope of grid search, totals and export.
+- Arrange form fields on shared rows with widths from one to twelve columns.
+  Narrow windows stack the fields in reading order. Existing forms retain their layout.
+  The navigation drawer now opens on demand in a narrow desktop window.
 
 ### Security and data integrity
 

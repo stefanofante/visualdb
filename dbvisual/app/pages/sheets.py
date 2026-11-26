@@ -12,20 +12,20 @@ from typing import Any
 
 from nicegui import ui
 
+from dbvisual.app.components.change_review import review_changes
+from dbvisual.app.components.editor_query import EditorPager
 from dbvisual.app.components.grid import SheetGrid
 from dbvisual.app.components.views_ui import open_views_dialog
 from dbvisual.app.components.webhooks_ui import open_webhooks_dialog
+from dbvisual.app.editor_changes import save_reviewed
 from dbvisual.app.identity import get_identity
 from dbvisual.app.query_builder import build_queryspec
 from dbvisual.app.rls import rls_available, rls_session_settings
 from dbvisual.app.sheet_service import (
-    ConflictError,
     SheetSpec,
-    apply_batch,
     build_operations,
     build_view,
     get_table,
-    load_rows,
     resolve_saved_engine,
 )
 from dbvisual.app.shell import frame
@@ -291,7 +291,6 @@ def sheet_editor(definition_id: int) -> None:
             )
             engine = engine.execution_options(dbvisual_definition_id=definition_id)
             view = build_view(sheet_spec.spec, metadata)
-            _fields, rows = load_rows(engine, metadata, sheet_spec.spec)
         except Exception as exc:
             ui.label(f"Unable to open the sheet: {exc}").classes("text-red-600")
             return
@@ -299,10 +298,6 @@ def sheet_editor(definition_id: int) -> None:
         with ui.row().classes("w-full items-center justify-between"):
             ui.label(definition["name"]).classes("text-2xl font-bold")
             with ui.row().classes("gap-2"):
-                discard = ui.button(
-                    "Discard edits and reload", on_click=ui.navigate.reload
-                ).props("outline")
-                discard.set_visibility(False)
                 save_btn = ui.button("Save", icon="save").props("color=primary")
                 ui.button(
                     "Views",
@@ -326,15 +321,34 @@ def sheet_editor(definition_id: int) -> None:
                     on_click=lambda: ui.navigate.to("/sheets"),
                 ).props("flat")
 
-        grid = SheetGrid(
-            view,
-            rows,
-            attachment_fields=sheet_spec.attachment_fields,
-            attachments=AttachmentStore(),
-            app_id=definition["app_id"],
-        )
+        def show_page(rows):
+            grid.reload(rows)
+            grid_box.set_visibility(True)
+            save_btn.enable()
 
-        def save() -> None:
+        pager = EditorPager(
+            engine,
+            metadata,
+            definition,
+            sheet_spec,
+            lambda: any(grid.collect_changes()),
+            show_page,
+        )
+        grid_box = ui.column().classes("w-full")
+        with grid_box:
+            grid = SheetGrid(
+                view,
+                [],
+                attachment_fields=sheet_spec.attachment_fields,
+                attachments=AttachmentStore(),
+                app_id=definition["app_id"],
+            )
+
+        grid_box.set_visibility(False)
+        save_btn.disable()
+        pager.load(force=True)
+
+        async def save() -> None:
             if grid.has_errors():
                 ui.notify(
                     "Fix the validation errors before saving.",
@@ -355,24 +369,23 @@ def sheet_editor(definition_id: int) -> None:
                 ui.notify("No changes to save.", type="info")
                 return
             try:
-                apply_batch(engine, ops, before_commit=grid.install_attachments)
-            except ConflictError:
-                grid.finish_attachments(False)
-                discard.set_visibility(True)
-                ui.notify(
-                    "A record changed in the database. Your edits are still visible.",
-                    type="warning",
+                saved = await review_changes(
+                    engine,
+                    ops,
+                    lambda reviewed: save_reviewed(
+                        engine,
+                        reviewed,
+                        view,
+                        grid.attachment_draft,
+                        sheet_spec.attachment_fields,
+                    ),
                 )
-                return
             except Exception as exc:
-                grid.finish_attachments(False)
-                ui.notify(f"Save cancelled (rollback): {exc}", type="negative")
+                ui.notify(f"Save failed: {exc}", type="negative")
                 return
-            discard.set_visibility(False)
-            grid.finish_attachments(True)
-            grid.cleanup_attachments()
-            _f, fresh = load_rows(engine, metadata, sheet_spec.spec)
-            grid.reload(fresh)
+            if not saved:
+                return
+            pager.refresh()
             ui.notify("Changes saved.", type="positive")
 
-        save_btn.on_click(lambda: save())
+        save_btn.on_click(save)

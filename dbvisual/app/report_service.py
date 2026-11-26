@@ -15,12 +15,12 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 from sqlalchemy import Engine, MetaData
 
-from dbvisual.app.form_service import AvailableValues, resolve_available_values
+from dbvisual.app.form_service import resolve_available_values
 from dbvisual.app.sheet_service import (
     resolve_engine,
 )
 from dbvisual.core.compiler import compile_select
-from dbvisual.core.queryspec import QuerySpec
+from dbvisual.core.queryspec import Param, QuerySpec
 from dbvisual.core.readonly import ensure_readonly, readonly_result
 
 __all__ = [
@@ -47,18 +47,10 @@ Agg = Literal["sum", "avg", "count", "min", "max"]
 GroupSort = Literal["caption", "total"]
 
 
-class ReportParam(BaseModel):
-    """A runtime prompt parameter for a report."""
+class ReportParam(Param):
+    """Existing report definitions may use additional provider-specific type names."""
 
-    name: str
-    label: str = ""
     type: str = "string"
-    multi: bool = False
-    default: Any = None
-    width: int = 200
-    available: AvailableValues = Field(default_factory=AvailableValues)
-    depends_on: str | None = None  # cascade: parent parameter name
-    order: int = 0
 
 
 class FilterCondition(BaseModel):

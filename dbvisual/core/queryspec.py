@@ -7,7 +7,7 @@ metadata store and shipped to the UI.
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -42,6 +42,18 @@ class Filter(BaseModel):
     param: str
 
 
+class AvailableValues(BaseModel):
+    """Source of allowed values for a dropdown field (label may differ from value)."""
+
+    source: Literal["none", "column", "table", "query", "manual"] = "none"
+    table: str | None = None
+    value_col: str | None = None
+    label_col: str | None = None
+    query: str | None = None
+    items: list[dict[str, Any]] = Field(default_factory=list)  # {"value","label"}
+    allow_new: bool = False
+
+
 class Param(BaseModel):
     """A named query parameter.
 
@@ -52,6 +64,13 @@ class Param(BaseModel):
     name: str
     type: ParamType = "string"
     multi: bool = False
+    label: str = ""
+    default: Any = None
+    required: bool = False
+    width: int = 200
+    available: AvailableValues = Field(default_factory=AvailableValues)
+    depends_on: str | None = None
+    order: int = 0
 
 
 class QuerySpec(BaseModel):

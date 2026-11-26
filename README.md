@@ -28,7 +28,26 @@ as a local **web app** on `127.0.0.1`. No separate frontend/backend, no JS build
 
 ---
 
-## Running the application
+## Install the desktop application
+
+Choose your operating system. The packages include Python and the application.
+
+| System | Download | Installation |
+| --- | --- | --- |
+| Windows 10 or 11, x64 | **DBVisual-Windows-x64-Setup.exe** | Double-click the installer, then open **DBVisual** from the Start menu. It installs for your Windows user and supplies the WebView2 runtime offline. |
+| macOS, Apple Silicon (M-series) | **DBVisual-macOS-arm64.dmg** | Open the disk image, drag **DBVisual** to **Applications**, then open it from there. |
+
+Use the assets attached to the [GitHub release](https://github.com/stefanofante/visualdb/releases).
+For builds under test, open a successful [Desktop candidates run](https://github.com/stefanofante/visualdb/actions/workflows/desktop.yml)
+and extract the downloaded artifact ZIP. Candidate installers have no publisher
+signature or Apple notarization. Keep an existing installation's user-data
+directory when upgrading. Its location appears in **Settings**.
+
+SQLite and DuckDB work locally. SQL Server needs a suitable system ODBC driver.
+The standard packages omit optional SQLCipher. Paradox files require a separate
+adapter and cannot currently be opened. [Package details](docs/packaging.md)
+
+## Running from Python
 
 After installation (see below), start the app from the entrypoint:
 
@@ -51,7 +70,7 @@ dbvisual --mode web --host 127.0.0.1 --port 8080
 
 ---
 
-## Installation (venv)
+## Install from source (venv)
 
 Requirements: **Python >= 3.11**.
 
@@ -140,6 +159,16 @@ cascades the files).
 Prev/next record navigation, typed inputs, **available values** (label != value), defaults,
 per-field validation, cross-field submit rules, conditional form rules, and attachment
 fields. Transactional save with optimistic locking.
+
+### Editing and form layout
+
+In a saved sheet or form, open **Query settings** to bind filters to field values.
+Required prompts delay retrieval until filled. **Apply filters** starts at the
+first page. Change the page size before applying. Sheets search, total, copy and
+export the loaded page. A table without a primary key has a bounded preview.
+**Save** previews the transaction. If a record changed, the editor shows the
+original, local and database values and asks which to keep. On a form, **Form
+layout** sets each field’s row and width on a twelve-column grid.
 
 ### Report (read-only)
 Query builder or read-only custom SQL (`ensure_readonly`). Multi-value and cascading

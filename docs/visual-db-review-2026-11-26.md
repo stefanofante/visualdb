@@ -31,6 +31,17 @@ A new image date alone cannot date a product feature.
 [Query parameters](https://visualdb.com/docs/queries.html) ·
 [Form layout](https://visualdb.com/docs/forms.html)
 
+## Implementation for the next DBVisual release
+
+All three candidates above are implemented on master. The Save preview covers
+sheets and forms, including row deletion. A retry compares against the database
+values displayed in the conflict dialog. Query settings can be added to existing
+definitions, with typed parameters and a page ordered by the entire primary key.
+Form layout stores the row and width and keeps the original layout when these are
+absent. Automated regression cases cover a second concurrent change, an adjacent
+pending upload, bounded composite-key paging and reopening old form definitions.
+The native builds also start the frozen application before packaging it.
+
 Visual DB also documents a remotely accessible REST API. That would change the
 local application's access model and requires a separate decision on identity,
 authorisation and deployment. Paradox interoperability remains a separate

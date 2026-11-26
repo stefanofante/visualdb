@@ -31,7 +31,9 @@ def frame(active: str = "") -> Iterator[None]:
 
     with ui.header().classes("items-center justify-between bg-primary text-white"):
         with ui.row().classes("items-center gap-2"):
-            ui.icon("grid_view").classes("text-2xl")
+            ui.button(icon="menu", on_click=lambda: drawer.toggle()).props(
+                'flat round aria-label="Navigation"'
+            )
             ui.label("dbvisual").classes("text-xl font-bold")
         with ui.row().classes("items-center gap-3"):
             ui.label("Local visual DB builder").classes("text-sm opacity-80")
@@ -39,7 +41,7 @@ def frame(active: str = "") -> Iterator[None]:
                 "Help", icon="help", on_click=lambda: ui.navigate.to("/help")
             ).props("flat color=white").classes("text-white")
 
-    with ui.left_drawer(value=True, bordered=True).classes("bg-gray-50 p-2") as drawer:
+    with ui.left_drawer(value=None, bordered=True).classes("bg-gray-50 p-2") as drawer:
         drawer.props("width=220")
         for label, icon, route in _NAV:
             classes = "w-full justify-start rounded"

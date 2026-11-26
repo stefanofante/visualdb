@@ -139,7 +139,11 @@ class SheetGrid:
         defs: list[dict[str, Any]] = [{"field": "__id__", "hide": True}]
         for col in self.view.columns:
             is_formula = col.field in self.formulas
-            editable = col.editable and not is_formula
+            editable = (
+                col.editable
+                and not is_formula
+                and col.field not in self.attachment_fields
+            )
             class_rules: dict[str, str] = {}
             if editable:
                 class_rules["dbv-negative"] = "typeof x === 'number' && x < 0"
@@ -246,6 +250,7 @@ class SheetGrid:
             row is None
             or field not in self.view.editable_fields
             or field in self.formulas
+            or field in self.attachment_fields
         ):
             return
         row[field] = data.get(field)
@@ -284,40 +289,9 @@ class SheetGrid:
 
     # -- attachments --------------------------------------------------------
 
-    def install_attachments(self, results):
-        from dbvisual.app.sheet_attachments import inserted_record_key, record_key
-        from dbvisual.meta.attachments import load_metadata
-
-        if self._attachments is None:
-            return
-        inserts, updates, deletes = self.collect_changes()
-        for row in updates:
-            self._attachments.install(
-                record_key(self.view, row), [row.get(f) for f in self.attachment_fields]
-            )
-        for row, pk in zip(
-            inserts, results[len(deletes) + len(updates) :], strict=True
-        ):
-            values = [row.get(f) for f in self.attachment_fields]
-            if any(load_metadata(value) for value in values):
-                self._attachments.install(inserted_record_key(self.view, pk), values)
-
-    def finish_attachments(self, committed):
-        if self._attachments:
-            self._attachments.finish(committed)
-
-    def cleanup_attachments(self):
-        from dbvisual.app.sheet_attachments import record_key
-
-        if self._attachments is None:
-            return
-        _, updates, deletes, originals = self.collect_changes_with_originals()
-        for old, new in [*zip(originals, updates), *((row, {}) for row in deletes)]:
-            self._attachments.discard_removed(
-                record_key(self.view, old),
-                [old.get(f) for f in self.attachment_fields],
-                [new.get(f) for f in self.attachment_fields],
-            )
+    @property
+    def attachment_draft(self):
+        return self._attachments
 
     async def _attachments_dialog(self) -> None:
         """Manage attachments of the selected row's first attachment field."""

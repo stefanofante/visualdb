@@ -24,7 +24,7 @@ from dbvisual.app.sheet_service import (  # reused Phase 3 helpers
 )
 from dbvisual.app.validation import FieldRule, validate_field
 from dbvisual.core.crud import delete_record, insert_record, update_record
-from dbvisual.core.queryspec import QuerySpec
+from dbvisual.core.queryspec import AvailableValues, QuerySpec
 from dbvisual.core.readonly import readonly_result
 
 __all__ = [
@@ -53,24 +53,14 @@ InputType = Literal[
 ]
 
 
-class AvailableValues(BaseModel):
-    """Source of allowed values for a dropdown field (label may differ from value)."""
-
-    source: Literal["none", "column", "table", "query", "manual"] = "none"
-    table: str | None = None
-    value_col: str | None = None
-    label_col: str | None = None
-    query: str | None = None
-    items: list[dict[str, Any]] = Field(default_factory=list)  # {"value","label"}
-    allow_new: bool = False
-
-
 class FieldConfig(BaseModel):
     """Per-field presentation, default, allowed values and validation rule."""
 
     field: str  # grid field key (alias or column name)
     label: str = ""
     input: InputType = "auto"
+    layout_row: int | None = Field(default=None, ge=1)
+    width: int = Field(default=12, ge=1, le=12)
     default: Any = None
     available: AvailableValues = Field(default_factory=AvailableValues)
     rule: FieldRule = Field(default_factory=FieldRule)

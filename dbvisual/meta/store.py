@@ -220,6 +220,20 @@ class MetadataStore:
             )
             return result.rowcount
 
+    def replace_definition_spec(
+        self, definition_id: int, original: str, new: str
+    ) -> bool:
+        with self.engine.begin() as conn:
+            result = conn.execute(
+                update(definitions)
+                .where(
+                    definitions.c.id == definition_id,
+                    definitions.c.queryspec_json == original,
+                )
+                .values(queryspec_json=new)
+            )
+            return result.rowcount == 1
+
     def delete_definition(self, definition_id: int) -> int:
         """Delete a definition by id; return the affected row count."""
         with self.engine.begin() as conn:

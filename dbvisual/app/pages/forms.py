@@ -12,31 +12,30 @@ from typing import Any
 
 from nicegui import ui
 
+from dbvisual.app.components.change_review import review_changes
+from dbvisual.app.components.editor_query import EditorPager
 from dbvisual.app.components.form_field import FormField
+from dbvisual.app.components.form_layout import edit_layout, layout_rows
 from dbvisual.app.components.webhooks_ui import open_webhooks_dialog
+from dbvisual.app.editor_changes import save_reviewed
 from dbvisual.app.form_service import (
-    ConflictError,
     FieldConfig,
     FormSpec,
     apply_defaults,
     build_view,
     check_submit_rules,
-    delete_form_record,
     evaluate_form_rules,
     get_table,
-    load_rows,
     resolve_available_values,
-    save_record,
 )
 from dbvisual.app.identity import get_identity
 from dbvisual.app.query_builder import build_queryspec
 from dbvisual.app.rls import rls_available, rls_session_settings
-from dbvisual.app.sheet_attachments import inserted_record_key
-from dbvisual.app.sheet_service import resolve_saved_engine
+from dbvisual.app.sheet_service import build_operations, resolve_saved_engine
 from dbvisual.app.shell import frame
 from dbvisual.app.state import get_state
 from dbvisual.core.introspect import detect_foreign_keys, get_columns, list_tables
-from dbvisual.meta.attachments import AttachmentDraft, AttachmentStore, load_metadata
+from dbvisual.meta.attachments import AttachmentDraft, AttachmentStore
 
 
 def _auto_fields(spec_columns: list[Any], main_table: str) -> list[FieldConfig]:
@@ -247,7 +246,7 @@ def form_editor(definition_id: int) -> None:
             )
             engine = engine.execution_options(dbvisual_definition_id=definition_id)
             view = build_view(form_spec.spec, metadata)
-            _f, records = load_rows(engine, metadata, form_spec.spec)
+            records = []
         except Exception as exc:
             ui.label(f"Unable to open the form: {exc}").classes("text-red-600")
             return
@@ -266,8 +265,31 @@ def form_editor(definition_id: int) -> None:
         fields: dict[str, FormField] = {}
 
         ui.label(definition["name"]).classes("text-2xl font-bold")
+
+        def dirty():
+            return bool(fields) and gather() != st.get("displayed")
+
+        def show_page(rows):
+            nonlocal records
+            records = rows
+            st["index"] = min(st["index"], max(0, len(rows) - 1))
+            st["is_new"] = not records
+            controls.set_visibility(True)
+            render()
+
+        pager = EditorPager(engine, metadata, definition, form_spec, dirty, show_page)
+        ui.button(
+            "Form layout",
+            icon="dashboard",
+            on_click=lambda: (
+                edit_layout(definition, form_spec) if pager.allow_navigation() else None
+            ),
+        ).props("flat")
+        ui.add_css(
+            ".dbv-form-row{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));width:100%;gap:0.5rem}.dbv-form-field{grid-column:span var(--width);min-width:0}@media(max-width:640px){.dbv-form-field{grid-column:1/-1}}"
+        )
         pos = ui.label("").classes("text-sm text-gray-500")
-        fields_box = ui.column().classes("w-full max-w-2xl gap-2")
+        fields_box = ui.column().classes("w-full max-w-5xl gap-2")
 
         def current_record() -> dict[str, Any]:
             if st["is_new"] or not records:
@@ -297,42 +319,45 @@ def form_editor(definition_id: int) -> None:
                 f"Record {shown} of {total}" + (" (new)" if st["is_new"] else "")
             )
             with fields_box:
-                for fc in form_spec.fields:
-                    editable = fc.field in view.editable_fields
-                    options = _options_for(engine, metadata, form_spec, fc, view)
-                    fw = FormField(
-                        fc,
-                        editable=editable,
-                        col_type=col_types.get(fc.field, ""),
-                        options=options,
-                        on_change=apply_rules,
-                        attachments=draft,
-                        record_key=str(pk_val),
-                        app_id=definition["app_id"],
-                    )
-                    fw.value = record.get(fc.field)
-                    fields[fc.field] = fw
+                for group in layout_rows(form_spec.fields):
+                    with ui.element("div").classes("dbv-form-row"):
+                        for fc in group:
+                            editable = fc.field in view.editable_fields
+                            options = _options_for(
+                                engine, metadata, form_spec, fc, view
+                            )
+                            fw = FormField(
+                                fc,
+                                editable=editable,
+                                col_type=col_types.get(fc.field, ""),
+                                options=options,
+                                on_change=apply_rules,
+                                attachments=draft,
+                                record_key=str(pk_val),
+                                app_id=definition["app_id"],
+                            )
+                            fw.container.classes("dbv-form-field").style(
+                                f"--width:{fc.width}"
+                            )
+                            fw.value = record.get(fc.field)
+                            fields[fc.field] = fw
+            st["displayed"] = gather()
             apply_rules()
 
         def go(delta: int) -> None:
-            if not records:
+            if not records or not pager.allow_navigation():
                 return
             st["is_new"] = False
             st["index"] = max(0, min(len(records) - 1, st["index"] + delta))
             render()
 
         def new_record() -> None:
+            if not pager.allow_navigation():
+                return
             st["is_new"] = True
             render()
 
-        def reload() -> None:
-            nonlocal records
-            _f2, records = load_rows(engine, metadata, form_spec.spec)
-            st["is_new"] = not records
-            st["index"] = min(st["index"], max(0, len(records) - 1))
-            render()
-
-        def save() -> None:
+        async def save() -> None:
             record = gather()
             errs = [m for fw in fields.values() for m in fw.validate()]
             if errs:
@@ -342,78 +367,49 @@ def form_editor(definition_id: int) -> None:
             if violations:
                 ui.notify("; ".join(violations), type="negative")
                 return
-            original = st["original"] or {}
+            original = st["original"]
+            ops = build_operations(
+                view,
+                table,
+                inserts=[record] if st["is_new"] else [],
+                updates=[] if st["is_new"] else [record],
+                deletes=[],
+                update_originals=[] if st["is_new"] else [original],
+            )
+            await review(ops)
 
-            def install(pk):
-                values = [record.get(f) for f in attachment_fields]
-                if not any(load_metadata(value) for value in values):
-                    return
-                key = (
-                    inserted_record_key(view, pk)
-                    if st["is_new"]
-                    else _record_key(view, original)
-                )
-                draft.install(key, values)
-
+        async def review(ops):
             try:
-                save_record(
+                saved = await review_changes(
                     engine,
-                    view,
-                    table,
-                    record,
-                    is_new=st["is_new"],
-                    original=st["original"],
-                    before_commit=install,
+                    ops,
+                    lambda reviewed: save_reviewed(
+                        engine, reviewed, view, draft, attachment_fields
+                    ),
                 )
-            except ConflictError:
-                draft.finish(False)
-                discard.set_visibility(True)
-                ui.notify(
-                    "The record changed in the database. Your edits are still visible.",
-                    type="warning",
-                )
-                return
             except Exception as exc:
-                draft.finish(False)
                 ui.notify(f"Save failed: {exc}", type="negative")
                 return
-            discard.set_visibility(False)
-            draft.finish(True)
-            if original:
-                draft.discard_removed(
-                    _record_key(view, original),
-                    [original.get(f) for f in attachment_fields],
-                    [record.get(f) for f in attachment_fields],
+            if saved:
+                pager.refresh()
+                ui.notify("Changes saved.", type="positive")
+
+        async def delete() -> None:
+            if not st["is_new"] and records:
+                await review(
+                    build_operations(
+                        view,
+                        table,
+                        inserts=[],
+                        updates=[],
+                        deletes=[records[st["index"]]],
+                    )
                 )
-            reload()
-            ui.notify("Record saved.", type="positive")
 
-        def delete() -> None:
-            if st["is_new"] or not records:
-                return
-            record = records[st["index"]]
-            try:
-                delete_form_record(engine, view, table, record)
-            except ConflictError as exc:
-                ui.notify(str(exc), type="warning")
-                discard.set_visibility(True)
-                return
-            draft.discard_removed(
-                _record_key(view, record),
-                [record.get(f) for f in attachment_fields],
-                [],
-            )
-            reload()
-            ui.notify("Record deleted.", type="positive")
-
-        with ui.row().classes("items-center gap-2"):
+        with ui.row().classes("items-center gap-2") as controls:
             ui.button(icon="chevron_left", on_click=lambda: go(-1)).props("flat")
             ui.button(icon="chevron_right", on_click=lambda: go(1)).props("flat")
             ui.button("New", icon="add", on_click=new_record).props("outline")
-            discard = ui.button(
-                "Discard edits and reload", on_click=ui.navigate.reload
-            ).props("outline")
-            discard.set_visibility(False)
             ui.button("Save", icon="save", on_click=save).props("color=primary")
             ui.button("Delete", icon="delete", on_click=delete).props(
                 "flat color=negative"
@@ -429,7 +425,8 @@ def form_editor(definition_id: int) -> None:
                 "Back", icon="arrow_back", on_click=lambda: ui.navigate.to("/forms")
             ).props("flat")
 
-        render()
+        controls.set_visibility(False)
+        pager.load(force=True)
 
 
 # -- helpers ----------------------------------------------------------------
