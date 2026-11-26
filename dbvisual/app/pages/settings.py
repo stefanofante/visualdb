@@ -24,6 +24,7 @@ from dbvisual.app.ai.settings import (
 )
 from dbvisual.app.app_settings import data_dir, get_startup_mode, set_startup_mode
 from dbvisual.app.identity import get_identity, set_identity
+from dbvisual.app.rest_api import issue_token, token_key
 from dbvisual.app.shell import frame
 from dbvisual.app.state import get_state
 
@@ -36,6 +37,36 @@ def settings_page() -> None:
     with frame(active="/settings"):
         ui.label("Settings").classes("text-2xl font-bold")
 
+        with ui.card().classes("w-full max-w-3xl gap-2"):
+            ui.label("Local REST API").classes("text-lg font-semibold")
+            apps = {r["id"]: r["name"] for r in state.store.list_applications()}
+            selector = ui.select(apps, label="Application").classes("w-full")
+            ui.label(
+                "Issue a token to export and manage this application’s definitions. Revoking it disables access immediately."
+            )
+
+            def manage(revoke=False):
+                app_id = selector.value
+                if app_id is None:
+                    ui.notify("Choose an application.")
+                    return
+                if revoke:
+                    state.secrets.delete_secret(token_key(app_id))
+                    ui.notify("Token revoked.")
+                    return
+                token = issue_token(app_id)
+                with ui.dialog().props("persistent") as dialog, ui.card():
+                    ui.label("Copy this token now. Issuing another replaces it.")
+                    ui.label(f"Application ID: {app_id}")
+                    ui.input("Bearer token", value=token).props("readonly").classes(
+                        "w-96"
+                    )
+                    ui.button("Close", on_click=dialog.close)
+                dialog.open()
+
+            with ui.row():
+                ui.button("Issue or rotate token", on_click=lambda: manage())
+                ui.button("Revoke token", on_click=lambda: manage(True)).props("flat")
         # --- AI ------------------------------------------------------------
         with ui.card().classes("w-full max-w-3xl gap-2"):
             ui.label("AI assistant").classes("text-lg font-semibold")

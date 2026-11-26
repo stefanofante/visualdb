@@ -42,10 +42,8 @@ absent. Automated regression cases cover a second concurrent change, an adjacent
 pending upload, bounded composite-key paging and reopening old form definitions.
 The native builds also start the frozen application before packaging it.
 
-Visual DB also documents a remotely accessible REST API. That would change the
-local application's access model and requires a separate decision on identity,
-authorisation and deployment. Paradox interoperability remains a separate
-database-adapter decision. The releases inspected provide no evidence that
-would change the effort estimate for that adapter.
+DBVisual implements a local metadata REST API for exchanging versioned definitions,
+with one token per application. Network hosting and remote user/role management
+would require a separate deployment decision. Paradox remains a separate adapter.
 
-[Visual DB REST API](https://visualdb.com/docs/rest-api.html)
+[DBVisual API contract](rest-api.md) · [Visual DB REST API](https://visualdb.com/docs/rest-api.html)

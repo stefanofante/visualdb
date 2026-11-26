@@ -11,7 +11,7 @@ from ipaddress import ip_address
 from pathlib import Path
 from typing import Literal
 
-from nicegui import ui
+from nicegui import app, ui
 
 from dbvisual.app import state as app_state
 from dbvisual.app.pages import about as _about  # noqa: F401
@@ -26,6 +26,9 @@ from dbvisual.app.pages import reports as _reports  # noqa: F401
 from dbvisual.app.pages import schema as _schema  # noqa: F401
 from dbvisual.app.pages import settings as _settings  # noqa: F401
 from dbvisual.app.pages import sheets as _sheets  # noqa: F401
+from dbvisual.app.rest_api import router
+
+app.include_router(router)
 
 Mode = Literal["desktop", "web"]
 

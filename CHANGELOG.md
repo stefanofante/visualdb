@@ -20,6 +20,9 @@ Use that entry as the GitHub release notes. Published changelogs contain version
 - Arrange form fields on shared rows with widths from one to twelve columns.
   Narrow windows stack the fields in reading order. Existing forms retain their layout.
   The navigation drawer now opens on demand in a narrow desktop window.
+- Added the local REST API for exporting and managing application definitions.
+  Tokens are scoped to one application. Updates and deletes require an ETag.
+  [REST API reference](docs/rest-api.md)
 
 ### Security and data integrity
 

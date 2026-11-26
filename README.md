@@ -11,7 +11,7 @@ over existing databases, in the spirit of Visual DB. It runs entirely on the ins
 machine: no cloud, no remote account, no multi-tenancy. The *target* databases may be local
 or remote, but the app and its metadata always stay local.
 
-[Changelog](CHANGELOG.md) · [Visual DB feature comparison, November 2026](docs/visual-db-review-2026-11-26.md)
+[Changelog](CHANGELOG.md) · [REST API](docs/rest-api.md) · [Visual DB feature comparison, November 2026](docs/visual-db-review-2026-11-26.md)
 
 Central concept: everything is generated from a **query-spec** (JSON). Forms, sheets and
 reports are just different *renders* of the same specification.
@@ -192,6 +192,13 @@ Visual schema browser and editor. Every change composes DDL and shows the exact 
 "Review and execute" dialog; execution only after explicit confirmation (double confirmation
 for destructive operations). CSV import/export, FK relationship diagram (`ui.mermaid`), and
 optional AI-generated DDL. The DDL channel is separate from `ensure_readonly`.
+
+### Local REST API
+
+Use **Settings → Local REST API** to issue a token for one application. A client
+can list, export, create, replace or delete definitions. Conditional writes use
+ETags so an update from another editor must be reviewed before retrying.
+[Endpoints and PowerShell example](docs/rest-api.md)
 
 ### Automation / Webhooks
 On create/update/delete, an optional non-blocking HTTP POST (JSON) is sent to configured

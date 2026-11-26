@@ -234,6 +234,25 @@ class MetadataStore:
             )
             return result.rowcount == 1
 
+    def change_definition_if_current(
+        self, row, *, name: str | None = None, spec: str | None = None
+    ) -> bool:
+        """Compare and write atomically, including rename races between UI and API."""
+        condition = (
+            definitions.c.id == row["id"],
+            definitions.c.app_id == row["app_id"],
+            definitions.c.name == row["name"],
+            definitions.c.kind == row["kind"],
+            definitions.c.queryspec_json == row["queryspec_json"],
+        )
+        command = (
+            delete(definitions)
+            if spec is None
+            else update(definitions).values(name=name, queryspec_json=spec)
+        )
+        with self.engine.begin() as conn:
+            return conn.execute(command.where(*condition)).rowcount == 1
+
     def delete_definition(self, definition_id: int) -> int:
         """Delete a definition by id; return the affected row count."""
         with self.engine.begin() as conn:
