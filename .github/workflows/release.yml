@@ -1,5 +1,10 @@
 name: Publish desktop release
 on:
+  workflow_call:
+    inputs:
+      release_commit:
+        type: boolean
+        default: false
   workflow_dispatch:
     inputs:
       tag:
@@ -20,14 +25,28 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - name: Check changelog before tagging
+        id: version
         env:
-          RELEASE_TAG: ${{ inputs.tag }}
-        run: python3 scripts/release_notes.py "$RELEASE_TAG" "$RUNNER_TEMP/release-notes.md"
+          REQUESTED_TAG: ${{ inputs.tag }}
+          FROM_BUILD: ${{ inputs.release_commit }}
+        run: |
+          tag="$REQUESTED_TAG"
+          if [[ "$FROM_BUILD" == true ]]; then
+            subject="$(git log -1 --format=%s)"
+            tag="${subject#Release }"
+          fi
+          python3 scripts/release_notes.py "$tag" "$RUNNER_TEMP/release-notes.md"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
       - name: Get successful native builds for the same commit
         env:
+          FROM_BUILD: ${{ inputs.release_commit }}
           GH_TOKEN: ${{ github.token }}
         run: |
-          run_id="$(gh run list --workflow desktop.yml --commit "$GITHUB_SHA" --status success --json databaseId --jq '.[0].databaseId // empty')"
+          if [[ "$FROM_BUILD" == true ]]; then
+            run_id="$GITHUB_RUN_ID"
+          else
+            run_id="$(gh run list --workflow desktop.yml --commit "$GITHUB_SHA" --status success --json databaseId --jq '.[0].databaseId // empty')"
+          fi
           test -n "$run_id" || { echo 'No successful desktop build for this commit.'; exit 1; }
           gh run download "$run_id" --dir "$RUNNER_TEMP/installers"
           test -s "$RUNNER_TEMP/installers/DBVisual-Windows-x64-Setup.exe/DBVisual-Windows-x64-Setup.exe"
@@ -35,7 +54,7 @@ jobs:
       - name: Publish tag, notes and installers
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ inputs.tag }}
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
         run: |
           flags=()
           if [[ "$RELEASE_TAG" == *-rc.* ]]; then flags+=(--prerelease); fi

@@ -11,7 +11,7 @@ over existing databases, in the spirit of Visual DB. It runs entirely on the ins
 machine: no cloud, no remote account, no multi-tenancy. The *target* databases may be local
 or remote, but the app and its metadata always stay local.
 
-[Changelog](CHANGELOG.md) · [REST API](docs/rest-api.md) · [Visual DB feature comparison, November 2026](docs/visual-db-review-2026-11-26.md)
+[Changelog](CHANGELOG.md) · [REST API](docs/rest-api.md)
 
 Central concept: everything is generated from a **query-spec** (JSON). Forms, sheets and
 reports are just different *renders* of the same specification.
@@ -34,15 +34,26 @@ Choose your operating system. The packages include Python and the application.
 
 | System | Download | Installation |
 | --- | --- | --- |
-| Windows 10 or 11, x64 | **DBVisual-Windows-x64-Setup.exe** | Double-click the installer, then open **DBVisual** from the Start menu. It installs for your Windows user and supplies the WebView2 runtime offline. |
-| macOS, Apple Silicon (M-series) | **DBVisual-macOS-arm64.dmg** | Open the disk image, drag **DBVisual** to **Applications**, then open it from there. |
+| Windows 10 or 11, x64 | [DBVisual-Windows-x64-Setup.exe](https://github.com/stefanofante/visualdb/releases/download/v1.2.0.0/DBVisual-Windows-x64-Setup.exe) | Double-click the installer, then open **DBVisual** from the Start menu. It installs for your Windows user and supplies the WebView2 runtime offline. |
+| macOS, Apple Silicon (M-series) | [DBVisual-macOS-arm64.dmg](https://github.com/stefanofante/visualdb/releases/download/v1.2.0.0/DBVisual-macOS-arm64.dmg) | Open the disk image, drag **DBVisual** to **Applications**, then open it from there. |
 
-For a tagged desktop release, use its assets on the [Releases page](https://github.com/stefanofante/visualdb/releases).
-The 1.0 and 1.1 tags contain source archives. To test 1.2 before its installer release,
-sign in to GitHub, open the latest successful [Desktop candidates run on master](https://github.com/stefanofante/visualdb/actions/workflows/desktop.yml?query=branch%3Amaster),
-select the artifact named for your operating system, and extract its ZIP. Candidate installers have no publisher
-signature or Apple notarization. Keep an existing installation's user-data
-directory when upgrading. Its location appears in **Settings**.
+Both downloads are public assets of [release v1.2.0.0](https://github.com/stefanofante/visualdb/releases/tag/v1.2.0.0).
+The Windows installer has no publisher signature and the Mac application has no
+Apple notarization. Upgrades retain the per-user data directory shown in **Settings**.
+
+**From a Git checkout in VS Code**, run these commands from the repository root
+on `master`. Git transfers the tag, code and changelog. The Python command
+downloads both installers for the checked-out version to `installers/v1.2.0.0/`,
+which you can open in the Explorer sidebar.
+
+```sh
+git pull --ff-only --tags origin master
+python scripts/download_installers.py
+```
+
+Use `py` on Windows or `python3` on macOS if your interpreter uses that name.
+The download helper uses Python 3.11 or newer. You can also save the two files
+directly from the table above.
 
 SQLite and DuckDB work locally. SQL Server needs a suitable system ODBC driver.
 The standard packages omit optional SQLCipher. Paradox files require a separate

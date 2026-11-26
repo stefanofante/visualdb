@@ -35,3 +35,6 @@ secrets.enc
 Thumbs.db
 .idea/
 .vscode/
+
+# Downloaded public release assets
+/installers/

@@ -21,7 +21,7 @@ for the commit under test and extract the GitHub ZIP wrappers.
 
 Candidates use no publisher signing identity or Apple notarization. Windows
 SmartScreen or macOS Gatekeeper may require a manual decision on a downloaded
-candidate. CI does not create a release or tag.
+candidate. Ordinary build commits only produce candidates. A versioned release commit publishes the tested installers.
 
 For a local build, use 64-bit Python 3.12 on the target platform. On macOS
 install the ODBC driver manager with `brew install unixodbc` and verify that
@@ -60,9 +60,10 @@ written under `dist/`.
 
 Replace the working changelog heading with the version and release date, include
 the actual changes and set the same version in `pyproject.toml`. Commit these
-files on master **before** tagging. Wait for both Desktop candidates jobs on that
-commit. In **Actions → Publish desktop release**, select master and enter the
-tag. The release job checks the package version, the dated changelog heading,
-the absence of Unreleased entries, and both native artifacts for that commit.
-Only then does it create the tag and publish those installers and notes. A tag
-ending in `-rc.N` produces a GitHub prerelease.
+files on master **before** tagging. Give the release commit the subject
+`Release v1.2.0.0` (substitute the actual tag). After both native jobs succeed,
+the publishing job checks the dated changelog, the package version and the two
+artifacts from that run. It creates the public GitHub release and tag at the
+same commit and attaches the installers. A tag ending in `-rc.N` produces a
+prerelease. To publish an existing successful build of master manually, use
+**Actions → Publish desktop release** and supply its tag.

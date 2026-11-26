@@ -3,7 +3,7 @@
 Before creating a tag, give its changes their published version and release date.
 Use that entry as the GitHub release notes. Published changelogs contain versioned entries only.
 
-## [Unreleased]
+## [1.2.0.0] – 2026-11-26
 
 ### Added
 
@@ -23,8 +23,10 @@ Use that entry as the GitHub release notes. Published changelogs contain version
 - Added the local REST API for exporting and managing application definitions.
   Tokens are scoped to one application. Updates and deletes require an ETag.
   See the REST API reference in the repository.
-- Added a publishing workflow that checks the dated changelog and the installer
-  builds for the exact commit before creating its tag and GitHub release.
+- Versioned release commits publish both native installers after their builds and
+  tests succeed. The release notes come from the dated changelog for that commit.
+- Run `python scripts/download_installers.py` from a source checkout to download
+  both release packages into its `installers` directory.
 
 ### Security and data integrity
 
@@ -79,6 +81,6 @@ Use that entry as the GitHub release notes. Published changelogs contain version
   builder, editable sheets, forms, master-detail editing, reports, schema tools,
   saved views, snapshots, webhooks and optional AI assistance.
 
-[Unreleased]: https://github.com/stefanofante/visualdb/compare/v1.1.0.0...master
+[1.2.0.0]: https://github.com/stefanofante/visualdb/compare/v1.1.0.0...v1.2.0.0
 [1.1.0.0]: https://github.com/stefanofante/visualdb/compare/v1.0.0.0...v1.1.0.0
 [1.0.0.0]: https://github.com/stefanofante/visualdb/tree/v1.0.0.0
