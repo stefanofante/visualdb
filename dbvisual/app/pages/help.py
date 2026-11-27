@@ -1,71 +1,81 @@
-"""Help page: a self-contained, navigable HTML manual served at /help.
-
-First-time-user oriented: explains installation, DB configuration and every app
-page button by button. Rendered as one HTML document with a sticky sidebar table
-of contents and anchored sections, so it is fully navigable without JavaScript.
-"""
+"""In-app manual shared by the Help dialog and the standalone /help page."""
 
 from __future__ import annotations
+
+from collections.abc import Callable
 
 from nicegui import ui
 
 _STYLE = """
-<style>
-.hlp { font-family: system-ui, Segoe UI, Arial, sans-serif; color: #1f2937; }
-.hlp-top { position: sticky; top: 0; z-index: 5; display: flex; align-items: center;
-  justify-content: space-between; gap: 12px; background: #2563eb; color: #fff;
-  padding: 10px 18px; }
-.hlp-top a.back { color: #fff; text-decoration: none; font-weight: 600;
-  border: 1px solid rgba(255,255,255,.5); padding: 4px 10px; border-radius: 6px; }
-.hlp-top a.back:hover { background: rgba(255,255,255,.15); }
-.hlp-body { display: flex; align-items: flex-start; gap: 0; }
-.hlp-nav { flex: 0 0 280px; position: sticky; top: 52px; align-self: flex-start;
-  max-height: calc(100vh - 52px); overflow: auto; background: #f8fafc;
-  border-right: 1px solid #e5e7eb; padding: 16px 14px; font-size: 14px; }
-.hlp-nav h4 { margin: 14px 0 6px; font-size: 12px; text-transform: uppercase;
-  letter-spacing: .04em; color: #6b7280; }
-.hlp-nav a { display: block; padding: 4px 8px; color: #1f2937; text-decoration: none;
-  border-radius: 6px; }
-.hlp-nav a:hover { background: #e5edff; color: #1d4ed8; }
-.hlp-main { flex: 1; padding: 24px 34px; max-width: 980px; }
-.hlp-main h1 { font-size: 26px; margin: 0 0 6px; }
-.hlp-main h2 { font-size: 20px; margin: 32px 0 8px; padding-top: 8px;
-  border-top: 1px solid #eef2f7; }
-.hlp-main h3 { font-size: 16px; margin: 18px 0 6px; color: #111827; }
-.hlp-main p, .hlp-main li { line-height: 1.55; }
-.hlp-main code { background: #f3f4f6; padding: 1px 5px; border-radius: 4px;
-  font-family: ui-monospace, Consolas, monospace; font-size: 13px; }
-.hlp-main pre { background: #0f172a; color: #e2e8f0; padding: 12px 14px;
-  border-radius: 8px; overflow: auto; }
-.hlp-main pre code { background: none; color: inherit; padding: 0; }
-.hlp-main table { border-collapse: collapse; width: 100%; font-size: 13px;
-  margin: 8px 0; }
-.hlp-main th, .hlp-main td { border: 1px solid #e5e7eb; padding: 6px 8px;
-  text-align: left; vertical-align: top; }
-.hlp-main th { background: #f3f4f6; }
+.hlp { --help-top: 0px; color: #1f2937; font-size: 16px; line-height: 1.55; }
+.hlp.standalone { --help-top: 56px; }
+.hlp-shell { display: grid; grid-template-columns: 216px minmax(0, 1fr);
+  max-width: 1200px; margin: 0 auto; }
+.hlp-sidebar { position: sticky; top: var(--help-top); align-self: start;
+  max-height: calc(100vh - var(--help-top)); overflow-y: auto;
+  padding: 16px; background: #f8fafc; border-right: 1px solid #dbe2eb; }
+.hlp-nav h4 { color: #334155; font-size: 14px; line-height: 1.4;
+  font-weight: 700; letter-spacing: normal; margin: 16px 0 4px; }
+.hlp-nav h4:first-child { margin-top: 0; }
+.hlp-nav a { display: block; padding: 3px 0; font-size: 14px; }
+.hlp a { color: #1d4ed8; text-decoration: underline; text-underline-offset: 2px; }
+.hlp a:focus-visible, .hlp summary:focus-visible { outline: 2px solid #2563eb;
+  outline-offset: 2px; }
+.hlp-mobile-index { display: none; }
+.hlp-main { min-width: 0; max-width: 88ch; padding: 20px 32px 48px; }
+.hlp-main h1, .hlp-main h2, .hlp-main h3 { color: #172033;
+  font-weight: 650; line-height: 1.3; letter-spacing: normal; }
+.hlp-main h1 { font-size: 26px; margin: 0 0 8px; }
+.hlp-main h2 { font-size: 21px; margin: 26px 0 8px;
+  padding-top: 14px; border-top: 1px solid #dbe2eb; }
+.hlp-main h3 { font-size: 17px; margin: 16px 0 5px; }
+.hlp-main p { margin: 0 0 10px; }
+.hlp-main ul, .hlp-main ol { padding-left: 1.5em; margin: 6px 0 12px; }
+.hlp-main ul { list-style: disc; }
+.hlp-main ol { list-style: decimal; }
+.hlp-main li { margin: 0 0 4px; }
+.hlp-main code { background: #f1f5f9; border-radius: 3px; padding: 1px 4px;
+  font-family: ui-monospace, Consolas, monospace; font-size: .9em; overflow-wrap: anywhere; }
+.hlp-main table { border-collapse: collapse; width: 100%; font-size: 14px; }
+.hlp-main th, .hlp-main td { border: 1px solid #dbe2eb; padding: 6px;
+  text-align: left; vertical-align: top; overflow-wrap: anywhere; }
+.hlp-main th { background: #f1f5f9; }
 .hlp-btn { font-weight: 600; }
-.hlp-note { background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px;
-  padding: 10px 12px; margin: 10px 0; font-size: 14px; }
-.hlp-tip { background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 8px;
-  padding: 10px 12px; margin: 10px 0; font-size: 14px; }
-.hlp-main section { scroll-margin-top: 64px; }
-</style>
+.hlp-note, .hlp-tip { border-left: 3px solid #2563eb; background: #eff6ff;
+  padding: 8px 12px; margin: 12px 0; }
+.hlp-main section, .hlp-main h3[id] { scroll-margin-top: calc(var(--help-top) + 10px); }
+@media (max-width: 840px) {
+  .hlp-shell { display: block; }
+  .hlp-sidebar { display: none; }
+  .hlp-mobile-index { display: block; background: #f8fafc; padding: 8px 16px;
+    border-bottom: 1px solid #dbe2eb; }
+  .hlp-mobile-index summary { cursor: pointer; color: #1d4ed8; font-weight: 600; }
+  .hlp-mobile-index nav { padding: 12px 6px 0; }
+  .hlp-main { padding: 16px 16px 40px; }
+}
+@media (max-width: 480px) {
+  .hlp-main h1 { font-size: 22px; }
+  .hlp-main h2 { font-size: 19px; }
+}
 """
 
 _NAV = """
 <nav class="hlp-nav">
   <h4>Getting started</h4>
-  <a href="#overview">Overview</a>
-  <a href="#install">Installation</a>
-  <a href="#run">Running the app</a>
   <a href="#firststeps">First steps</a>
+  <a href="#install">Install DBVisual</a>
+  <a href="#run">Open the app</a>
+  <a href="#create-db">Create a database</a>
+  <a href="#sqlite">Open a SQLite file</a>
+  <a href="#csv">Import a CSV file</a>
+  <a href="#overview">Overview</a>
   <a href="#concepts">Key concepts</a>
   <h4>Pages</h4>
   <a href="#connections">Connections</a>
   <a href="#dbconfig">Database configuration</a>
   <a href="#database">Database (schema)</a>
   <a href="#sheets">Sheets</a>
-  <a href="#forms">Forms</a>
+  <a href="#form-editor">Forms</a>
   <a href="#reports">Reports</a>
   <a href="#masterdetail">Master-detail</a>
   <a href="#applications">Applications</a>
@@ -85,13 +95,69 @@ _NAV = """
 
 _CONTENT = """
 <div class="hlp-main">
-<h1>dbvisual - User guide</h1>
-<p>dbvisual is a <strong>local</strong>, self-contained application to build
-<strong>forms, sheets (grids) and reports</strong> over your existing databases.
-Everything runs on this machine as a native desktop window or a local web app on
-<code>127.0.0.1</code> - no cloud, no remote account. This guide explains, page by
-page and button by button, how to use it. If this is your first time, read
-<a href="#firststeps">First steps</a> after installing.</p>
+<section id="firststeps">
+<h1>First steps</h1>
+<p>Begin with a database file on your computer. Once connected, you can browse
+its tables, build an editable sheet or create a report.</p>
+
+<h3 id="run">Open the app</h3>
+<p><strong>Windows:</strong> open Start, type <strong>DBVisual</strong> and select
+the app. The installer creates the shortcut in the Start menu.
+<strong>Mac:</strong> open DBVisual in Applications.</p>
+<p>The first screen is <strong>Connections</strong>. “No saved connections”
+means you are ready to add your first database.</p>
+
+<h3 id="create-db">Create a database</h3>
+<ol>
+  <li>In <strong>Connections</strong>, click <strong>Create database</strong>.
+  Choose <strong>SQLite</strong> or <strong>DuckDB</strong>.</li>
+  <li>Enter a <strong>File name</strong> such as <em>Practice</em>. Keep the
+  suggested folder, enter another folder path or use <strong>Choose folder</strong>
+  in the desktop app. DBVisual adds the file extension if you omit it.</li>
+  <li>Click <strong>Create</strong>. Your new connection appears in the list.
+  From <strong>Database</strong> you can create a table or import a CSV.</li>
+</ol>
+<h3 id="sqlite">Open a SQLite file</h3>
+<ol>
+  <li>Save the database in a folder you can write to, such as a DBVisual folder
+  under Documents. Extract the file first if it came in a ZIP archive.</li>
+  <li>In <strong>Connections</strong>, choose <strong>New connection</strong>.
+  Enter a <strong>Name</strong> such as <em>Practice</em> and change
+  <strong>Dialect</strong> to <strong>SQLite</strong>.</li>
+  <li>Paste the full path of the database file into <strong>Database / file path</strong>.
+  Leave Host, Port, Username and Password empty.</li>
+  <li>Click <strong>Test</strong>, then <strong>Save</strong>. On the saved connection,
+  click <strong>Browse schema</strong> to see the tables. If you expected tables
+  and see none, check the filename: SQLite can create an empty file at a new path.</li>
+</ol>
+
+<h3 id="csv">Import a CSV file</h3>
+<ol>
+  <li>Save the CSV anywhere convenient. Use a UTF-8, comma-separated file
+  with column names in the first row.</li>
+  <li>Choose a destination database. If this is your first import,
+  <a href="#create-db">create a database</a> first.</li>
+  <li>Open the navigation menu, choose <strong>Database</strong>, select the
+  saved connection and click <strong>Import CSV</strong>.</li>
+  <li>Enter a <strong>New table name</strong> and choose your CSV file. Click
+  <strong>Review DDL</strong>, then <strong>Execute</strong>. The new table
+  appears in the database. The original CSV stays in its folder.</li>
+</ol>
+<h3>Work with the data</h3>
+<p>To view imported rows, create a <a href="#reports">report</a>. To edit an existing
+table that has a primary key, open <a href="#sheets">Sheet</a> and choose
+<strong>New sheet</strong>. Choose or name an application, select the connection,
+table and columns, then save and open your sheet.</p>
+</section>
+
+<section id="install">
+<h2>Install DBVisual</h2>
+<p><strong>Windows 10 or 11 (64-bit):</strong> run the setup file and accept the
+suggested folder. It installs for your Windows user. If Windows shows “Access
+denied” for Program Files, run setup again and keep the suggested location.</p>
+<p><strong>Mac with Apple Silicon:</strong> open the disk image, drag DBVisual to
+Applications and open it from there. Both desktop packages include Python.</p>
+</section>
 
 <section id="overview">
 <h2>Overview</h2>
@@ -109,62 +175,13 @@ reports are just different <em>renders</em> of that spec:</p>
 (lookup) columns are read-only.</p>
 </section>
 
-<section id="install">
-<h2>Installation</h2>
-<p>You need Python 3.11 or later. A virtual environment is recommended.</p>
-<pre><code>python -m venv .venv
-.\\.venv\\Scripts\\python.exe -m pip install -e .</code></pre>
-<p>Database drivers are <strong>optional extras</strong> - install only what you
-need:</p>
-<pre><code># one driver
-.\\.venv\\Scripts\\python.exe -m pip install -e ".[postgresql]"
-# or every driver at once
-.\\.venv\\Scripts\\python.exe -m pip install -e ".[all-drivers]"</code></pre>
-<p>Available extras: <code>postgresql</code>, <code>mysql</code>,
-<code>mssql</code>, <code>oracle</code>, <code>duckdb</code>,
-<code>all-drivers</code>. SQLite ships with Python.</p>
-</section>
-
-<section id="run">
-<h2>Running the app</h2>
-<pre><code>python main.py --mode desktop      # native desktop window (default)
-python main.py --mode web          # web app at http://127.0.0.1:8080</code></pre>
-<p>Or, once installed, the <code>dbvisual</code> command:</p>
-<pre><code>dbvisual --mode desktop
-dbvisual --mode web --host 127.0.0.1 --port 8080</code></pre>
-<p>In web mode the app stays bound to <code>127.0.0.1</code> (local only). You can
-set the preferred startup mode from the <a href="#settings">Settings</a> page.</p>
-</section>
-
-<section id="firststeps">
-<h2>First steps (start here)</h2>
-<ol>
-  <li>Open <a href="#connections">Connections</a> and click
-  <span class="hlp-btn">New connection</span>. Pick your database dialect, fill in
-  the details, click <span class="hlp-btn">Test</span>, then
-  <span class="hlp-btn">Save</span>. See
-  <a href="#dbconfig">Database configuration</a> for per-database fields.</li>
-  <li>Click <span class="hlp-btn">Browse schema</span> to confirm the app can read
-  your tables.</li>
-  <li>Go to <a href="#sheets">Sheets</a> (or Forms/Reports) and click
-  <span class="hlp-btn">New sheet</span>. Choose the connection, load the schema,
-  pick the main table and columns, then <span class="hlp-btn">Save</span>.</li>
-  <li>Open the new sheet and start editing, or build a report and try
-  <a href="#views">saved views</a> and <a href="#snapshots">snapshots</a>.</li>
-</ol>
-<div class="hlp-tip">Tip: the left navigation drawer switches between pages
-(Connections, Database, Sheet, Form, Report, Master-Detail, Applications,
-Settings, About). This Help opens in its own view; use <em>Back to app</em> at the
-top to return.</div>
-</section>
-
 <section id="concepts">
 <h2>Key concepts</h2>
 <ul>
   <li><strong>Main table</strong>: the only writable table of a definition.</li>
   <li><strong>Related tables</strong>: read-only lookups joined for display.</li>
   <li><strong>Optimistic locking</strong>: if a record changed since you loaded it,
-  saving stops. Your edits stay visible until you choose to discard and reload.</li>
+  saving stops. Review the conflicting fields and choose which values to keep.</li>
   <li><strong>Identity</strong>: an email used for PostgreSQL row-level security and
   to scope private saved views.</li>
 </ul>
@@ -176,11 +193,13 @@ top to return.</div>
 to.</p>
 <h3>Buttons and controls</h3>
 <ul>
+  <li><a href="#create-db">Create database</a> creates an empty SQLite or DuckDB file
+  and saves its connection.</li>
   <li><span class="hlp-btn">New connection</span> - opens the connection dialog
   (see below).</li>
   <li><strong>Current identity (email for PostgreSQL RLS)</strong> - the email
-  passed to Postgres as <code>app.current_user_email</code>. Leave empty to disable
-  RLS. Click <span class="hlp-btn">Save identity</span> to store it.</li>
+  passed to Postgres as <code>app.current_user_email</code>. An identity is required
+  for definitions that use RLS. SQLite connections can leave this field empty. Click <span class="hlp-btn">Save identity</span> to store it.</li>
   <li>Per saved connection card:
     <ul>
       <li><span class="hlp-btn">Browse schema</span> - lists tables, columns
@@ -215,28 +234,20 @@ row-level security.</div>
 
 <section id="dbconfig">
 <h2>Database configuration (per dialect)</h2>
-<p>Fields to fill in the connection dialog, and the driver extra to install.</p>
+<p>Select the dialect in <strong>New connection</strong>, then enter the corresponding details.</p>
 <table>
-  <tr><th>Dialect</th><th>Typical fields</th><th>Driver extra</th></tr>
-  <tr><td>PostgreSQL</td><td>host, port 5432, database, username, password</td>
-    <td><code>pip install -e ".[postgresql]"</code></td></tr>
-  <tr><td>MySQL / MariaDB</td><td>host, port 3306, database, username, password</td>
-    <td><code>pip install -e ".[mysql]"</code></td></tr>
-  <tr><td>SQL Server</td><td>host, port 1433, database, username, password (an ODBC
-    driver must be installed on the OS)</td>
-    <td><code>pip install -e ".[mssql]"</code></td></tr>
-  <tr><td>Oracle</td><td>host, port 1521, service/database, username, password</td>
-    <td><code>pip install -e ".[oracle]"</code></td></tr>
-  <tr><td>SQLite</td><td>Database / file path only (no host/port/user)</td>
-    <td>built in</td></tr>
-  <tr><td>DuckDB</td><td>Database / file path, or <code>:memory:</code></td>
-    <td><code>pip install -e ".[duckdb]"</code></td></tr>
-  <tr><td>SQLite encrypted (SQLCipher)</td><td>file path + passphrase</td>
-    <td>needs <code>pysqlcipher3</code> or <code>sqlcipher3</code></td></tr>
+  <tr><th>Dialect</th><th>Connection details</th></tr>
+  <tr><td>SQLite</td><td>Full path to the database file.</td></tr>
+  <tr><td>DuckDB</td><td>Full path to the database file; enter the passphrase for an encrypted database.</td></tr>
+  <tr><td>PostgreSQL</td><td>Host, port (usually 5432), database, username and password.</td></tr>
+  <tr><td>MySQL / MariaDB</td><td>Host, port (usually 3306), database, username and password.</td></tr>
+  <tr><td>SQL Server</td><td>Host, port (usually 1433), database, username and password.
+  Install a compatible ODBC driver on the computer.</td></tr>
+  <tr><td>Oracle</td><td>Host, port (usually 1521), service or database, username and password.</td></tr>
+  <tr><td>SQLite encrypted (SQLCipher)</td><td>File path and passphrase. Requires a source
+  installation with a SQLCipher driver; the standard installers omit this optional driver.</td></tr>
 </table>
-<div class="hlp-tip">Always click <span class="hlp-btn">Test</span> before
-<span class="hlp-btn">Save</span>. If a driver is missing, Test reports a clear
-error telling you which package to install.</div>
+<p>Click <strong>Test</strong> to check the details, then <strong>Save</strong>.</p>
 </section>
 
 <section id="database">
@@ -326,10 +337,10 @@ add or drop a foreign key via ALTER.</div>
   <li><strong>Group by</strong> - group rows by one or more columns.</li>
 </ul>
 <div class="hlp-note">Only main-table columns are editable; related columns are
-read-only. If someone else changed a row, the save is refused. Read or copy your edits before choosing Discard edits and reload.</div>
+read-only. If someone else changed a row, the save is refused. Review the original, local and database values. Choose which edits to keep, then click <strong>Apply choices and retry</strong>.</div>
 </section>
 
-<section id="forms">
+<section id="form-editor">
 <h2>Forms (single-record data entry)</h2>
 <p>Route <code>/forms</code>. One record at a time with navigation.</p>
 <h3>List page</h3>
@@ -530,50 +541,71 @@ you.</div>
 
 <section id="packaging">
 <h2>Packaging (standalone executable)</h2>
-<p>The desktop candidates include Python. Use the x64 installer on Windows
-or drag the app from the disk image to Applications on an Apple Silicon Mac.
-Build instructions and installed-product checks are in <code>docs/packaging.md</code>.
-Settings shows the directory holding your data.</p>
+<p>For the Windows installer and macOS disk image, see <a href="#install">Install
+DBVisual</a>. If you are running from the Python source distribution, follow the
+installation and launch instructions in the repository README.</p>
 </section>
 
 <section id="faq">
 <h2>Troubleshooting / FAQ</h2>
 <ul>
   <li><strong>Test connection fails with a missing driver</strong> - install the
-  matching extra (see <a href="#dbconfig">Database configuration</a>).</li>
-  <li><strong>Save is refused with a concurrency message</strong> - someone changed
-  the record. The editor keeps your draft until you discard and reload.</li>
+  driver required for your database (see <a href="#dbconfig">Database configuration</a>).</li>
+  <li><strong>Another user changed a row.</strong> Compare the original value, your edit
+  and the current database value. Choose which value to keep, then retry the save.</li>
   <li><strong>RLS does not filter anything</strong> - set the identity email and make
   sure the Postgres role is non-superuser / non-owner.</li>
-  <li><strong>Encrypted SQLite is unavailable</strong> - install
-  <code>pysqlcipher3</code> or <code>sqlcipher3</code>; DuckDB encryption works out
-  of the box.</li>
-  <li><strong>The native window shows a blank page after an upgrade</strong> - pin a
-  known-good NiceGUI 3.x version.</li>
-  <li><strong>Where is my data?</strong> - the user data folder is shown on the
-  Settings page.</li>
+  <li><strong>Encrypted SQLite is unavailable.</strong> The standard installer supports
+  ordinary SQLite files. See <a href="#dbconfig">Database configuration</a> for SQLCipher.</li>
+  <li><strong>Where are my files?</strong> Your SQLite database stays at the path in
+  its connection. CSV imports create a table in the selected database. Settings shows
+  the separate folder for DBVisual settings, attachments and snapshots.</li>
 </ul>
 </section>
 
 </div>
 """
 
-_HELP_HTML = (
-    _STYLE
-    + '<div class="hlp">'
-    + '<div class="hlp-top">'
-    + "<strong>dbvisual - Help</strong>"
-    + '<a class="back" href="/connections">Back to app</a>'
-    + "</div>"
-    + '<div class="hlp-body">'
-    + _NAV
-    + _CONTENT
-    + "</div></div>"
-)
+
+def _toolbar(on_back: Callable[[], None]) -> None:
+    with ui.row().classes(
+        "w-full shrink-0 flex-nowrap items-center justify-between gap-2 bg-primary "
+        "px-4 text-white h-14"
+    ):
+        ui.label("DBVisual Help").classes("text-xl font-bold")
+        ui.button("Back to app", icon="arrow_back", on_click=on_back).props(
+            "outline no-caps color=white"
+        )
+
+
+def help_dialog() -> ui.dialog:
+    """Keep the current editor and its unsaved values mounted beneath the manual."""
+    with (
+        ui.dialog().props('maximized aria-label="DBVisual Help"') as dialog,
+        ui.card().classes(
+            "w-full h-full flex flex-col flex-nowrap p-0 gap-0 overflow-hidden"
+        ),
+    ):
+        _toolbar(dialog.close)
+        ui.element("iframe").props(
+            'src="/help?embedded=true" title="User guide"'
+        ).classes("w-full grow min-h-0 border-0")
+    return dialog
 
 
 @ui.page("/help")
-def help_page() -> None:
-    """Render the self-contained, navigable HTML help document."""
+def help_page(embedded: bool = False) -> None:
+    """Render the same guide in the app or at its bookmarked URL."""
+    ui.add_css(_STYLE)
     ui.query(".nicegui-content").classes("p-0 gap-0")
-    ui.html(_HELP_HTML).classes("w-full")
+    if not embedded:
+        ui.colors(primary="#2563eb")
+        with ui.header().classes("p-0"):
+            _toolbar(lambda: ui.navigate.to("/connections"))
+    layout = "hlp" if embedded else "hlp standalone"
+    ui.html(
+        f'<div class="{layout}"><div class="hlp-shell">'
+        f'<aside class="hlp-sidebar">{_NAV}</aside>'
+        f'<details class="hlp-mobile-index"><summary>Guide topics</summary>{_NAV}</details>'
+        f"{_CONTENT}</div></div>"
+    ).classes("w-full")

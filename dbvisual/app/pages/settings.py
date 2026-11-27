@@ -59,7 +59,7 @@ def settings_page() -> None:
                     ui.label("Copy this token now. Issuing another replaces it.")
                     ui.label(f"Application ID: {app_id}")
                     ui.input("Bearer token", value=token).props("readonly").classes(
-                        "w-96"
+                        "w-96 max-w-full"
                     )
                     ui.button("Close", on_click=dialog.close)
                 dialog.open()

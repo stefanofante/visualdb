@@ -22,6 +22,8 @@ htmlcov/
 
 # Local dbvisual data (metadata store, secrets)
 *.db
+/test.duckdb
+/test.duckdb.wal
 secret.key
 secrets.enc
 

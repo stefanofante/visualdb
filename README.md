@@ -34,16 +34,16 @@ Choose your operating system. The packages include Python and the application.
 
 | System | Download | Installation |
 | --- | --- | --- |
-| Windows 10 or 11, x64 | [DBVisual-Windows-x64-Setup.exe](https://github.com/stefanofante/visualdb/releases/download/v1.2.0.0/DBVisual-Windows-x64-Setup.exe) | Double-click the installer, then open **DBVisual** from the Start menu. It installs for your Windows user and supplies the WebView2 runtime offline. |
-| macOS, Apple Silicon (M-series) | [DBVisual-macOS-arm64.dmg](https://github.com/stefanofante/visualdb/releases/download/v1.2.0.0/DBVisual-macOS-arm64.dmg) | Open the disk image, drag **DBVisual** to **Applications**, then open it from there. |
+| Windows 10 or 11, x64 | [DBVisual-Windows-x64-Setup.exe](https://github.com/stefanofante/visualdb/releases/download/v1.2.1.0/DBVisual-Windows-x64-Setup.exe) | Double-click the installer, then open **DBVisual** from the Start menu. It installs for your Windows user and supplies the WebView2 runtime offline. |
+| macOS, Apple Silicon (M-series) | [DBVisual-macOS-arm64.dmg](https://github.com/stefanofante/visualdb/releases/download/v1.2.1.0/DBVisual-macOS-arm64.dmg) | Open the disk image, drag **DBVisual** to **Applications**, then open it from there. |
 
-Both downloads are public assets of [release v1.2.0.0](https://github.com/stefanofante/visualdb/releases/tag/v1.2.0.0).
+Both downloads are public assets of [release v1.2.1.0](https://github.com/stefanofante/visualdb/releases/tag/v1.2.1.0).
 The Windows installer has no publisher signature and the Mac application has no
 Apple notarization. Upgrades retain the per-user data directory shown in **Settings**.
 
 **From a Git checkout in VS Code**, run these commands from the repository root
 on `master`. Git transfers the tag, code and changelog. The Python command
-downloads both installers for the checked-out version to `installers/v1.2.0.0/`,
+downloads both installers for the checked-out version to `installers/v1.2.1.0/`,
 which you can open in the Explorer sidebar.
 
 ```sh
@@ -58,6 +58,19 @@ directly from the table above.
 SQLite and DuckDB work locally. SQL Server needs a suitable system ODBC driver.
 The standard packages omit optional SQLCipher. Paradox files require a separate
 adapter and cannot currently be opened. [Package details](docs/packaging.md)
+
+## Start with a local database
+
+Open **Connections → Create database**, choose **SQLite** or **DuckDB**, enter
+a file name and choose a folder. DBVisual creates the file and saves its
+connection. To open an existing SQLite file, use **New connection**, choose
+**SQLite**, and paste the full path in **Database / file path**.
+
+To load a CSV, open **Database**, select the destination connection, then
+click **Import CSV**. Enter a new table name, choose your UTF-8 CSV with a
+header row, click **Review DDL**, then **Execute**. Both the database and the
+source CSV can stay in your own folders. **Help** opens the step-by-step guide;
+**Back to app** returns to the page you were using.
 
 ## Running from Python
 

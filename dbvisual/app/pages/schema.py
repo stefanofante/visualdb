@@ -68,9 +68,9 @@ def _review_and_execute(
             except Exception as exc:
                 ui.notify(str(exc), type="negative")
                 return
+            ui.notify("DDL executed.", type="positive")
             dialog.close()
             on_done()
-            ui.notify("DDL executed.", type="positive")
 
         with ui.row().classes("w-full justify-end gap-2"):
             label = "Execute (confirm)" if destructive else "Execute"
@@ -96,7 +96,7 @@ def schema_page() -> None:
 
         conn_select = ui.select(
             {c["id"]: c["name"] for c in conns}, label="Connection"
-        ).classes("w-96")
+        ).classes("w-96 max-w-full")
         body = ui.column().classes("w-full gap-3")
         ctx: dict[str, Any] = {}
 

@@ -3,6 +3,19 @@
 Before creating a tag, give its changes their published version and release date.
 Use that entry as the GitHub release notes. Published changelogs contain versioned entries only.
 
+## [1.2.1.0] – 2026-11-27
+
+- Create an empty SQLite or DuckDB database from Connections. Choose a name and
+  folder; the new file is registered as a connection and existing files are protected.
+- Open Help over the current page and return to the same draft. The guide uses
+  the app's blue header, a persistent Back to app button, a compact topic index
+  on narrow screens and step-by-step instructions for opening databases and importing CSV.
+- Keep inputs within the available width and reduce page headings and padding
+  in small windows. Desktop builds check the guide layout and navigation in Chromium
+  on Windows and WebKit on macOS.
+- Fix the success notification after importing a CSV or changing a database schema.
+- Remove the unused sample file `test.duckdb` from the source tree.
+
 ## [1.2.0.0] – 2026-11-26
 
 ### Added
@@ -81,6 +94,7 @@ Use that entry as the GitHub release notes. Published changelogs contain version
   builder, editable sheets, forms, master-detail editing, reports, schema tools,
   saved views, snapshots, webhooks and optional AI assistance.
 
+[1.2.1.0]: https://github.com/stefanofante/visualdb/compare/v1.2.0.0...v1.2.1.0
 [1.2.0.0]: https://github.com/stefanofante/visualdb/compare/v1.1.0.0...v1.2.0.0
 [1.1.0.0]: https://github.com/stefanofante/visualdb/compare/v1.0.0.0...v1.1.0.0
 [1.0.0.0]: https://github.com/stefanofante/visualdb/tree/v1.0.0.0

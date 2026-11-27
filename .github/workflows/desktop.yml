@@ -16,9 +16,11 @@ jobs:
         include:
           - os: windows-2022
             architecture: x64
+            browser: chromium
             artifact: DBVisual-Windows-x64-Setup.exe
           - os: macos-15
             architecture: arm64
+            browser: webkit
             artifact: DBVisual-macOS-arm64.dmg
     runs-on: ${{ matrix.os }}
     steps:
@@ -36,8 +38,11 @@ jobs:
         run: python -m pytest -q -rs
       - name: Freeze the application
         run: python scripts/build_desktop.py
-      - name: Start the frozen application
-        run: python scripts/smoke_desktop.py
+      - name: Test the frozen application layout
+        run: |
+          python -m pip install playwright
+          python -m playwright install ${{ matrix.browser }}
+          python scripts/smoke_desktop.py --browser ${{ matrix.browser }}
       - name: Create Windows installer
         if: runner.os == 'Windows'
         shell: pwsh

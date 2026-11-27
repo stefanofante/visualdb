@@ -6,10 +6,14 @@ connection testing and schema reflection — no DB logic is duplicated here.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
-from nicegui import ui
+from nicegui import app, ui
+from platformdirs import user_documents_path
+from sqlalchemy.exc import SQLAlchemyError
 
+from dbvisual.app.database_files import create_database_file
 from dbvisual.app.identity import get_identity, set_identity
 from dbvisual.app.shell import frame
 from dbvisual.app.state import get_state
@@ -54,6 +58,71 @@ def _to_config(data: dict[str, Any], password: str | None) -> ConnectionConfig:
         query=data.get("options") or {},
         encryption_key=data.get("passphrase") or None,
     )
+
+
+def _create_database_dialog(on_saved) -> None:
+    store = get_state().store
+    documents = user_documents_path()
+    with ui.dialog() as dialog, ui.card().classes("w-[520px] max-w-full gap-3"):
+        ui.label("Create database").classes("text-lg font-semibold")
+        dialect = ui.select(
+            {"sqlite": "SQLite", "duckdb": "DuckDB"},
+            value="sqlite",
+            label="Database type",
+        ).classes("w-full")
+        filename = ui.input("File name", placeholder="Practice").classes("w-full")
+        folder = ui.input(
+            "Folder", value=str(documents if documents.is_dir() else Path.home())
+        ).classes("w-full")
+        window = app.native.main_window
+        if window is not None:
+
+            async def browse() -> None:
+                import webview
+
+                folder_mode = (
+                    webview.FileDialog.FOLDER
+                    if hasattr(webview, "FileDialog")
+                    else webview.FOLDER_DIALOG
+                )
+                selected = await window.create_file_dialog(
+                    folder_mode, directory=folder.value
+                )
+                if selected:
+                    folder.set_value(
+                        selected if isinstance(selected, str) else selected[0]
+                    )
+
+            ui.button("Choose folder", icon="folder_open", on_click=browse).props(
+                "outline"
+            )
+
+        result = ui.label("").classes("text-sm text-red-700")
+
+        def create() -> None:
+            try:
+                path = create_database_file(dialect.value, folder.value, filename.value)
+            except (OSError, ValueError, ImportError, SQLAlchemyError) as exc:
+                result.set_text(str(exc))
+                return
+            try:
+                store.create_connection(
+                    name=path.stem, dialect=dialect.value, database=str(path)
+                )
+            except SQLAlchemyError as exc:
+                result.set_text(
+                    f"Database created at {path}. The connection could not be saved: {exc}. "
+                    "Use New connection to open this file."
+                )
+                return
+            dialog.close()
+            on_saved()
+            ui.notify(f"Database created: {path.name}", type="positive")
+
+        with ui.row().classes("w-full justify-end gap-2"):
+            ui.button("Cancel", on_click=dialog.close).props("flat")
+            ui.button("Create", on_click=create).props("color=primary")
+    dialog.open()
 
 
 def _connection_dialog(on_saved) -> None:
@@ -106,7 +175,10 @@ def _connection_dialog(on_saved) -> None:
             data, password = collect()
             try:
                 engine = build_engine(_to_config(data, password))
-                ok = test_connection(engine)
+                try:
+                    ok = test_connection(engine)
+                finally:
+                    engine.dispose()
             except Exception as exc:  # driver missing / bad params
                 result.set_text(f"Error: {exc}")
                 result.classes(replace="text-sm text-red-600")
@@ -169,8 +241,11 @@ def _schema_dialog(connection: dict[str, Any]) -> None:
 
         try:
             engine = build_engine(config)
-            metadata = reflect_schema(engine)
-            tables = list_tables(metadata)
+            try:
+                metadata = reflect_schema(engine)
+                tables = list_tables(metadata)
+            finally:
+                engine.dispose()
         except Exception as exc:
             with body:
                 ui.label(f"Unable to read the schema: {exc}").classes("text-red-600")
@@ -232,11 +307,17 @@ def connections_page() -> None:
     with frame(active="/connections"):
         with ui.row().classes("w-full items-center justify-between"):
             ui.label("Connections").classes("text-2xl font-bold")
-            ui.button(
-                "New connection",
-                icon="add",
-                on_click=lambda: _connection_dialog(refresh),
-            ).props("color=primary")
+            with ui.row().classes("items-center gap-2"):
+                ui.button(
+                    "Create database",
+                    icon="create_new_folder",
+                    on_click=lambda: _create_database_dialog(refresh),
+                ).props("outline")
+                ui.button(
+                    "New connection",
+                    icon="add",
+                    on_click=lambda: _connection_dialog(refresh),
+                ).props("color=primary")
 
         # Local identity (Phase 8): email passed to Postgres RLS as
         # app.current_user_email. Empty = RLS inactive.
@@ -278,7 +359,9 @@ def connections_page() -> None:
                                     detail += f" · {conn['host']}"
                                 if conn.get("database"):
                                     detail += f" / {conn['database']}"
-                                ui.label(detail).classes("text-sm text-gray-500")
+                                ui.label(detail).classes(
+                                    "text-sm text-gray-500 break-all"
+                                )
                             with ui.row().classes("gap-1"):
                                 ui.button(
                                     "Browse schema",
